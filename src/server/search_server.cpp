@@ -10,12 +10,15 @@
 #include "spp/json/json_serializer.h"
 #include "spp/json/json_value.h"
 #include "spp/query/query_parser.h"
+#include "spp/query/ranker.h"
 #include "spp/query/searcher.h"
 
 #include <atomic>
+#include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -120,6 +123,11 @@ class SearchServer::Impl {
             "POST", "/:index/_refresh", [this](const http::HttpRequest& r) { return Refresh(r); });
         router_->Add(
             "GET", "/:index/_search", [this](const http::HttpRequest& r) { return Search(r); });
+        router_->Add(
+            "GET", "/:index/_ltr", [this](const http::HttpRequest& r) { return GetLtr(r); });
+        router_->Add(
+            "PUT", "/:index/_ltr/linear",
+            [this](const http::HttpRequest& r) { return PutLtrLinear(r); });
     }
 
     http::HttpResponse Health(const http::HttpRequest&) {
@@ -212,6 +220,28 @@ class SearchServer::Impl {
         for (const auto& [k, v] : obj) {
             if (k == "_id")
                 continue;
+            // Per-field token weight arrays: `<field>_weights: [floats]`.
+            // Silently ignored at index time if the schema field hasn't
+            // opted into store_token_weights — the analyzer still tokenizes
+            // the corresponding text field as usual.
+            if (k.size() > 8 && k.compare(k.size() - 8, 8, "_weights") == 0
+                && v.is_array()) {
+                const auto field = k.substr(0, k.size() - 8);
+                std::vector<float> weights;
+                weights.reserve(v.as_array().size());
+                for (const auto& wv : v.as_array()) {
+                    if (wv.is_number())
+                        weights.push_back(static_cast<float>(wv.as_double()));
+                }
+                doc.field_token_weights[field] = std::move(weights);
+                continue;
+            }
+            // Per-doc static quality. Silently ignored if the schema didn't
+            // opt into store_doc_quality.
+            if (k == "_quality" && v.is_number()) {
+                doc.doc_quality = static_cast<float>(v.as_double());
+                continue;
+            }
             if (v.is_string()) {
                 doc.fields[k] = v.as_string();
             } else if (v.is_number()) {
@@ -246,6 +276,49 @@ class SearchServer::Impl {
         spp::json::JsonObject ok;
         ok["refreshed"] = true;
         ok["generation"] = static_cast<std::int64_t>(*gen_e);
+        return JsonResponse(200, spp::json::JsonValue(std::move(ok)));
+    }
+
+    http::HttpResponse GetLtr(const http::HttpRequest& req) {
+        auto it = req.path_params.find("index");
+        if (it == req.path_params.end())
+            return ErrorJson(400, "bad_request", "missing index name");
+        const std::string name = it->second;
+        if (GetWriter(name) == nullptr)
+            return ErrorJson(404, "not_found", "no such index");
+
+        spp::json::JsonObject root;
+        spp::json::JsonArray available;
+        available.emplace_back(std::string{"bm25"});
+        available.emplace_back(std::string{"catboost"});
+        if (auto r = GetLinearRanker(name); r != nullptr) {
+            available.emplace_back(std::string{"linear"});
+            root["linear"] = r->ToJson();
+        }
+        root["available"] = spp::json::JsonValue(std::move(available));
+        return JsonResponse(200, spp::json::JsonValue(std::move(root)));
+    }
+
+    http::HttpResponse PutLtrLinear(const http::HttpRequest& req) {
+        auto it = req.path_params.find("index");
+        if (it == req.path_params.end())
+            return ErrorJson(400, "bad_request", "missing index name");
+        const std::string name = it->second;
+        if (GetWriter(name) == nullptr)
+            return ErrorJson(404, "not_found", "no such index");
+
+        auto parsed = spp::json::Parse(req.body);
+        if (!parsed.ok())
+            return ErrorJson(400, "bad_request", parsed.status().message());
+        auto built = spp::query::LinearRanker::FromJson(*parsed);
+        if (!built.ok())
+            return ErrorJson(400, "bad_request", built.status().message());
+        std::shared_ptr<const spp::query::LinearRanker> shared = std::move(*built);
+        SetLinearRanker(name, shared);
+
+        spp::json::JsonObject ok;
+        ok["acknowledged"] = true;
+        ok["ranker"] = std::string("linear");
         return JsonResponse(200, spp::json::JsonValue(std::move(ok)));
     }
 
@@ -299,6 +372,50 @@ class SearchServer::Impl {
         spp::query::SearchOptions sopts;
         sopts.size = size;
         sopts.default_field = default_field;
+
+        // Two-stage rerank. `rerank=true` opts into a feature-based rescorer;
+        // `ranker=bm25|linear|catboost` picks which (default bm25 = no rerank).
+        // `top_n` overrides the candidate pool size (default 1000).
+        bool rerank = false;
+        if (auto pi = params.find("rerank"); pi != params.end()) {
+            rerank = (pi->second == "true" || pi->second == "1");
+        }
+        std::string ranker_kind = "bm25";
+        if (auto pi = params.find("ranker"); pi != params.end()) {
+            ranker_kind = pi->second;
+        }
+        if (auto pi = params.find("top_n"); pi != params.end()) {
+            try {
+                sopts.rerank_top_n = static_cast<std::size_t>(std::stoul(pi->second));
+            } catch (...) {
+                return ErrorJson(400, "bad_request", "invalid 'top_n' parameter");
+            }
+            if (sopts.rerank_top_n > 100000)
+                sopts.rerank_top_n = 100000;
+        }
+
+        // Hold any shared_ptr-owned ranker alive for the duration of the call —
+        // SearchOptions stores a raw pointer.
+        std::shared_ptr<const spp::query::LinearRanker> linear_keepalive;
+        std::unique_ptr<spp::query::Bm25Ranker> bm25_keepalive;
+        std::unique_ptr<spp::query::CatboostRanker> catboost_keepalive;
+        if (rerank && ranker_kind != "bm25") {
+            if (ranker_kind == "linear") {
+                linear_keepalive = GetLinearRanker(name);
+                if (linear_keepalive == nullptr) {
+                    return ErrorJson(
+                        400, "bad_request",
+                        "no linear ranker configured — PUT /:index/_ltr/linear first");
+                }
+                sopts.ranker = linear_keepalive.get();
+            } else if (ranker_kind == "catboost") {
+                catboost_keepalive = std::make_unique<spp::query::CatboostRanker>();
+                sopts.ranker = catboost_keepalive.get();
+            } else {
+                return ErrorJson(400, "bad_request", "unknown ranker kind");
+            }
+        }
+
         auto res_e = searcher.Search(*ast_e, sopts);
         if (!res_e.ok()) {
             return ErrorJson(500, "internal", res_e.status().message());
@@ -323,11 +440,34 @@ class SearchServer::Impl {
         return JsonResponse(200, spp::json::JsonValue(std::move(root)));
     }
 
+    // Per-index linear ranker storage. Read-mostly: search threads load via
+    // `std::atomic_load(&entry)` so updates are lock-free for readers.
+    // The map itself is guarded by `rankers_mu_`; the shared_ptrs it holds are
+    // swapped atomically with `std::atomic_store`. We pull the pointer once at
+    // search time so the same Ranker is used for the whole query.
+    std::shared_ptr<const spp::query::LinearRanker> GetLinearRanker(const std::string& index) {
+        std::lock_guard<std::mutex> lk(rankers_mu_);
+        auto it = linear_rankers_.find(index);
+        if (it == linear_rankers_.end())
+            return nullptr;
+        return std::atomic_load(&it->second);
+    }
+
+    void SetLinearRanker(const std::string& index,
+                         std::shared_ptr<const spp::query::LinearRanker> r) {
+        std::lock_guard<std::mutex> lk(rankers_mu_);
+        auto& slot = linear_rankers_[index];
+        std::atomic_store(&slot, std::move(r));
+    }
+
     SearchServerOptions opts_;
     std::shared_ptr<http::Router> router_;
     std::unique_ptr<http::HttpServer> http_server_;
     std::mutex writers_mu_;
     std::unordered_map<std::string, std::unique_ptr<index::IndexWriter>> writers_;
+    std::mutex rankers_mu_;
+    std::unordered_map<std::string, std::shared_ptr<const spp::query::LinearRanker>>
+        linear_rankers_;
 };
 
 SearchServer::SearchServer(SearchServerOptions opts)

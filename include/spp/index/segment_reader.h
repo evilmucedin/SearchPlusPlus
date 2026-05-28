@@ -60,6 +60,13 @@ class SegmentReader {
     // Read the stored-fields JSON for a doc id. Returns empty view if missing.
     std::string_view StoredFields(DocId id) const;
 
+    // v0.2: per-doc static quality from the `.dvq` stripe. Returns 0.0 if the
+    // segment was sealed without a quality stripe or the id is out of range.
+    float DocQuality(DocId id) const;
+    bool has_doc_quality() const noexcept {
+        return !doc_quality_.empty();
+    }
+
  private:
     SegmentReader() = default;
 
@@ -68,6 +75,7 @@ class SegmentReader {
     std::string doc_buf_;
     std::string fdt_buf_;
     std::vector<std::uint64_t> fdx_offsets_;
+    std::vector<float> doc_quality_;
 };
 
 }  // namespace spp::index

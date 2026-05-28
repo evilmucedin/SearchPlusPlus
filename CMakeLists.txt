@@ -22,6 +22,9 @@ option(SPP_BUILD_TOOLS         "Build CLI tools (spp_index/search/serve)" ON)
 option(SPP_ENABLE_SANITIZERS   "Enable AddressSanitizer + UBSan"    OFF)
 option(SPP_ENABLE_LTO          "Enable link-time optimization"      OFF)
 option(SPP_WARNINGS_AS_ERRORS  "Treat compiler warnings as errors"  ON)
+option(SPP_WITH_LTR_MODEL      "Link a CatBoost model into spp_core" ON)
+set(SPP_LTR_MODEL_FILE "${CMAKE_SOURCE_DIR}/models/catboost_model.cpp"
+    CACHE FILEPATH "Path to the CatBoost-exported C++ model to embed")
 
 if(SPP_ENABLE_LTO)
   include(CheckIPOSupported)

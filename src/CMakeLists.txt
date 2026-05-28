@@ -24,6 +24,8 @@ add_library(spp_core STATIC
   query/query_parser.cpp
   query/iterators.cpp
   query/bm25_scorer.cpp
+  query/features.cpp
+  query/ranker.cpp
   query/searcher.cpp
 
 
@@ -35,6 +37,14 @@ add_library(spp_core STATIC
 
   server/search_server.cpp
 )
+
+# Embed the CatBoost C++ export. The default file is a stub that returns
+# features[0] (== BM25 total) so the engine builds without a real model;
+# point SPP_LTR_MODEL_FILE at your CatBoost export and rebuild to deploy.
+if(SPP_WITH_LTR_MODEL)
+  target_sources(spp_core PRIVATE ${SPP_LTR_MODEL_FILE})
+  target_include_directories(spp_core PRIVATE ${CMAKE_SOURCE_DIR})
+endif()
 
 target_include_directories(spp_core
   PUBLIC
