@@ -144,6 +144,73 @@ TEST(FeaturesTest, TokenWeightSumAndMax) {
     EXPECT_FLOAT_EQ(fv[Idx(Feature::kTokenWeightMax)], 2.0f);
 }
 
+TEST(FeaturesTest, MinAndMaxIdfMatched) {
+    LeafContextItem a;
+    a.matched = true;
+    a.tf = 1;
+    a.idf = 0.3;
+    a.field_len = 10.0;
+    a.avg_field_len = 10.0;
+    LeafContextItem b = a;
+    b.idf = 2.5;
+    LeafContextItem c = a;
+    c.idf = 1.0;
+    CandidateContext ctx;
+    ctx.num_query_leaves = 3;
+    ctx.leaves = {a, b, c};
+    const auto fv = ExtractFeatures(ctx, Bm25Params{});
+    EXPECT_FLOAT_EQ(fv[Idx(Feature::kMinIdfMatched)], 0.3f);
+    EXPECT_FLOAT_EQ(fv[Idx(Feature::kMaxIdfMatched)], 2.5f);
+}
+
+TEST(FeaturesTest, IdfExtremesIgnoreUnmatchedLeaves) {
+    LeafContextItem hit;
+    hit.matched = true;
+    hit.tf = 1;
+    hit.idf = 1.5;
+    hit.field_len = 10.0;
+    hit.avg_field_len = 10.0;
+    LeafContextItem miss;
+    miss.matched = false;
+    miss.idf = 99.0;  // would dominate min/max if it leaked in
+    CandidateContext ctx;
+    ctx.num_query_leaves = 2;
+    ctx.leaves = {hit, miss};
+    const auto fv = ExtractFeatures(ctx, Bm25Params{});
+    EXPECT_FLOAT_EQ(fv[Idx(Feature::kMinIdfMatched)], 1.5f);
+    EXPECT_FLOAT_EQ(fv[Idx(Feature::kMaxIdfMatched)], 1.5f);
+}
+
+TEST(FeaturesTest, FirstPosMinNormGatesOnPositionDecay) {
+    // Field without position_decay must not contribute, even if first_pos is 0.
+    LeafContextItem no_decay;
+    no_decay.matched = true;
+    no_decay.tf = 1;
+    no_decay.idf = 1.0;
+    no_decay.field_len = 100.0;
+    no_decay.avg_field_len = 100.0;
+    no_decay.position_decay = 0.0f;
+    no_decay.first_pos = 0;
+    CandidateContext ctx_no;
+    ctx_no.num_query_leaves = 1;
+    ctx_no.leaves = {no_decay};
+    const auto fv_no = ExtractFeatures(ctx_no, Bm25Params{});
+    EXPECT_FLOAT_EQ(fv_no[Idx(Feature::kFirstPosMinNorm)], 0.0f);
+
+    // Field with position_decay > 0 reports the normalized first position,
+    // and the min is taken across multiple opted-in leaves.
+    LeafContextItem early = no_decay;
+    early.position_decay = 1.0f;
+    early.first_pos = 5;
+    LeafContextItem late = early;
+    late.first_pos = 80;
+    CandidateContext ctx_yes;
+    ctx_yes.num_query_leaves = 2;
+    ctx_yes.leaves = {late, early};
+    const auto fv_yes = ExtractFeatures(ctx_yes, Bm25Params{});
+    EXPECT_NEAR(fv_yes[Idx(Feature::kFirstPosMinNorm)], 5.0f / 100.0f, 1e-6);
+}
+
 TEST(FeaturesTest, ReservedDocLengthSlotsAreZero) {
     LeafContextItem hit;
     hit.matched = true;

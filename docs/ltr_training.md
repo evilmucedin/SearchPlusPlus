@@ -12,7 +12,34 @@ The same shape applies to any GBDT trainer that can emit a function with signatu
   ```json
   {"query": "search engine", "doc_id": "wiki:12345", "label": 3}
   ```
-  `label` is an integer relevance grade (0 = irrelevant, 4 = perfect; CatBoost works with any small integer range). Optional `query_id`: integer used to group rows for ranking losses. When omitted, `spp_export_features` auto-assigns one per unique query string.
+  `label` is an integer relevance grade (0 = irrelevant, 4 = perfect; CatBoost works with any small integer range). Optional `query_id`: integer used to group rows for ranking losses. When omitted, `spp_export_features` auto-assigns one per unique query string. Mix positives (`label > 0`) and explicit negatives (`label = 0`) per query — the pairwise ranking loss needs both.
+
+## Quick start
+
+Two scripts do the round-trip; reach for them before wiring CatBoost by hand.
+
+```bash
+# End-to-end smoke test on the checked-in demo corpus (30 docs, ~50 judgments)
+cmake --build --preset default --target spp_index spp_export_features -j
+pip install catboost
+./scripts/demo_train_ltr.sh
+```
+
+The demo asserts a non-empty `.cpp` lands at `build/demo_catboost_model.cpp` — see `scripts/demo_train_ltr.sh` for the moving parts.
+
+For real data:
+
+```bash
+scripts/train_ltr.py \
+    --index /var/lib/spp/wiki \
+    --judgments judgments.jsonl \
+    --out models/catboost_model.cpp \
+    --iterations 300 --depth 6
+
+cmake --build --preset default -j     # rebuild with the new embedded model
+```
+
+Both scripts wrap the manual flow documented below.
 
 ## 1. Build the index with LTR fields
 
@@ -132,12 +159,12 @@ For sanity-checking the two-stage pipeline before you commit to training a GBDT,
 ```bash
 curl -X PUT 'http://localhost:9200/wiki/_ltr/linear' \
   -H 'Content-Type: application/json' \
-  -d '{"bias": 0.0, "weights": [1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0.3, 0, 1.0]}'
+  -d '{"bias": 0.0, "weights": [1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0.3, 0, 1.0, 0.25, 0, 0]}'
 
 curl 'http://localhost:9200/wiki/_search?q=search&rerank=true&ranker=linear'
 ```
 
-The weights array must have exactly `kFeatureCount` entries (16 in v0.2). `GET /:index/_ltr` echoes back the active config including human-readable feature names — useful when wiring weights from a spreadsheet.
+The weights array must have exactly `kFeatureCount` entries (19 since the v2 feature additions). `GET /:index/_ltr` echoes back the active config including human-readable feature names — useful when wiring weights from a spreadsheet.
 
 ## Feature schema
 
@@ -158,5 +185,8 @@ The slot order and meaning is fixed by `include/spp/query/features.h`:
 | 13   | `token_weight_sum`  | sum of stored token weights                |
 | 14   | `token_weight_max`  | max stored token weight                    |
 | 15   | `doc_quality`       | value from `.dvq` stripe (0.0 if absent)   |
+| 16   | `min_idf_matched`   | min IDF across matched leaves              |
+| 17   | `max_idf_matched`   | max IDF across matched leaves              |
+| 18   | `first_pos_min_norm`| min(first_pos / field_len) across matched leaves in fields with `position_decay > 0`; 0 otherwise |
 
 Any time the schema changes — adding a slot, reordering, removing a slot — bump `kFeatureSchemaVersion`. The trained CatBoost model must match.

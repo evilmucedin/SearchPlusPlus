@@ -42,6 +42,12 @@ const char* FeatureName(Feature f) noexcept {
             return "token_weight_max";
         case Feature::kDocQuality:
             return "doc_quality";
+        case Feature::kMinIdfMatched:
+            return "min_idf_matched";
+        case Feature::kMaxIdfMatched:
+            return "max_idf_matched";
+        case Feature::kFirstPosMinNorm:
+            return "first_pos_min_norm";
     }
     return "unknown";
 }
@@ -75,6 +81,11 @@ FeatureVector ExtractFeatures(const CandidateContext& ctx, const Bm25Params& par
     double token_weight_sum = 0.0;
     float token_weight_max = 0.0f;
     bool any_weight = false;
+    double min_idf = 0.0;
+    double max_idf = 0.0;
+    bool any_idf = false;
+    double first_pos_min_norm = 0.0;
+    bool any_pos = false;
 
     for (const auto& l : ctx.leaves) {
         if (!l.matched)
@@ -88,10 +99,22 @@ FeatureVector ExtractFeatures(const CandidateContext& ctx, const Bm25Params& par
         if (l.field_id < 4) {
             per_field_bm25[l.field_id] += sc;
         }
+        if (!any_idf || l.idf < min_idf)
+            min_idf = l.idf;
+        if (!any_idf || l.idf > max_idf)
+            max_idf = l.idf;
+        any_idf = true;
         if (l.position_decay > 0.0f && l.field_len > 0.0) {
             const double pos = static_cast<double>(l.first_pos);
             position_decay_sum +=
                 std::exp(-static_cast<double>(l.position_decay) * pos / l.field_len);
+            // first_pos_min_norm gates on the same `position_decay > 0` field
+            // opt-in so a slot value of 0 unambiguously means "no field
+            // contributed", not "matched at position 0 in some unopted field".
+            const double norm = pos / l.field_len;
+            if (!any_pos || norm < first_pos_min_norm)
+                first_pos_min_norm = norm;
+            any_pos = true;
         }
         if (l.token_weight != 1.0f || l.boost != 1.0f) {
             // Tracking weights even when they default to 1.0 would dilute the
@@ -122,6 +145,12 @@ FeatureVector ExtractFeatures(const CandidateContext& ctx, const Bm25Params& par
     if (ctx.segment != nullptr && ctx.segment->has_doc_quality()) {
         v[Idx(Feature::kDocQuality)] = ctx.segment->DocQuality(ctx.doc_id);
     }
+    if (any_idf) {
+        v[Idx(Feature::kMinIdfMatched)] = static_cast<float>(min_idf);
+        v[Idx(Feature::kMaxIdfMatched)] = static_cast<float>(max_idf);
+    }
+    if (any_pos)
+        v[Idx(Feature::kFirstPosMinNorm)] = static_cast<float>(first_pos_min_norm);
     // kDocLengthAvg / kDocLengthMin stay 0 in v0.2 — see features.h.
     return v;
 }
