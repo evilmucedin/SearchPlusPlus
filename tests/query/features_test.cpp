@@ -63,8 +63,8 @@ TEST(FeaturesTest, Bm25TotalMatchesPerFieldSumForKnownLeaves) {
     ctx.leaves = {a, b};
 
     const auto fv = ExtractFeatures(ctx, Bm25Params{});
-    const float sum_fields = fv[Idx(Feature::kBm25Field0)] + fv[Idx(Feature::kBm25Field1)]
-                             + fv[Idx(Feature::kBm25Field2)] + fv[Idx(Feature::kBm25Field3)];
+    const float sum_fields = fv[Idx(Feature::kBm25Field0)] + fv[Idx(Feature::kBm25Field1)] +
+                             fv[Idx(Feature::kBm25Field2)] + fv[Idx(Feature::kBm25Field3)];
     EXPECT_FLOAT_EQ(fv[Idx(Feature::kBm25Total)], sum_fields);
     EXPECT_GT(fv[Idx(Feature::kBm25Field0)], 0.0f);
     EXPECT_GT(fv[Idx(Feature::kBm25Field2)], 0.0f);
@@ -93,8 +93,7 @@ TEST(FeaturesTest, BoostScalesBm25Contribution) {
 
     const auto fa = ExtractFeatures(ctx_a, Bm25Params{});
     const auto fb = ExtractFeatures(ctx_b, Bm25Params{});
-    EXPECT_NEAR(fb[Idx(Feature::kBm25Total)],
-                fa[Idx(Feature::kBm25Total)] * 2.5f, 1e-4);
+    EXPECT_NEAR(fb[Idx(Feature::kBm25Total)], fa[Idx(Feature::kBm25Total)] * 2.5f, 1e-4);
 }
 
 TEST(FeaturesTest, PositionDecaySumDecreasesForLaterPositions) {

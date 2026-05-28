@@ -42,9 +42,18 @@ class RerankBenchIndex {
         writer_ = spp::index::IndexWriter::Open(dir_, opts).value();
 
         std::mt19937 rng(0xdeadbeef);
-        const char* corpus[] = {"search", "engine",  "lucene",   "elasticsearch",
-                                "fast",   "tiny",    "index",    "segment",
-                                "posting", "document","tokens",   "score"};
+        const char* corpus[] = {"search",
+                                "engine",
+                                "lucene",
+                                "elasticsearch",
+                                "fast",
+                                "tiny",
+                                "index",
+                                "segment",
+                                "posting",
+                                "document",
+                                "tokens",
+                                "score"};
         for (int i = 0; i < 10'000; ++i) {
             spp::index::Document d;
             d.id = std::to_string(i);

@@ -23,8 +23,8 @@ namespace spp::index {
 struct Posting {
     DocId doc_id;
     std::uint32_t tf;
-    std::uint16_t first_pos = 0;     // ordinal of first occurrence in this doc's field
-    float max_token_weight = 1.0f;   // max over all occurrences in this doc's field
+    std::uint16_t first_pos = 0;    // ordinal of first occurrence in this doc's field
+    float max_token_weight = 1.0f;  // max over all occurrences in this doc's field
 };
 
 // Per-(field, term) postings being accumulated.

@@ -153,8 +153,8 @@ int main(int argc, char** argv) {
         const auto* qv = parsed->find("query");
         const auto* dv = parsed->find("doc_id");
         const auto* lv = parsed->find("label");
-        if (qv == nullptr || !qv->is_string() || dv == nullptr || !dv->is_string()
-            || lv == nullptr || !lv->is_number()) {
+        if (qv == nullptr || !qv->is_string() || dv == nullptr || !dv->is_string() ||
+            lv == nullptr || !lv->is_number()) {
             std::fprintf(stderr, "skip line (missing query|doc_id|label)\n");
             continue;
         }
@@ -213,8 +213,10 @@ int main(int argc, char** argv) {
         }
         ++rows_written;
     }
-    std::fprintf(stderr, "wrote %llu rows (%llu zero-feature) to %s\n",
+    std::fprintf(stderr,
+                 "wrote %llu rows (%llu zero-feature) to %s\n",
                  static_cast<unsigned long long>(rows_written),
-                 static_cast<unsigned long long>(rows_zero), args.out_path.c_str());
+                 static_cast<unsigned long long>(rows_zero),
+                 args.out_path.c_str());
     return writer->Close().ok() ? 0 : 1;
 }

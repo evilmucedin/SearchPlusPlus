@@ -65,8 +65,7 @@ DocId TermIterator::Next() {
         }
         const std::uint8_t lo = static_cast<std::uint8_t>(cursor_[0]);
         const std::uint8_t hi = static_cast<std::uint8_t>(cursor_[1]);
-        current_pos_ =
-            static_cast<std::uint16_t>(lo) | static_cast<std::uint16_t>(hi << 8);
+        current_pos_ = static_cast<std::uint16_t>(lo) | static_cast<std::uint16_t>(hi << 8);
         cursor_ += 2;
     } else {
         current_pos_ = spp::index::kNoPosition;
@@ -77,8 +76,7 @@ DocId TermIterator::Next() {
             current_ = kNoMoreDocs;
             return current_;
         }
-        current_weight_ =
-            spp::index::DequantizeTokenWeight(static_cast<std::uint8_t>(*cursor_));
+        current_weight_ = spp::index::DequantizeTokenWeight(static_cast<std::uint8_t>(*cursor_));
         ++cursor_;
     } else {
         current_weight_ = 1.0f;

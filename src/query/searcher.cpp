@@ -205,8 +205,7 @@ Expected<SearchResult> Searcher::Search(const QueryAst& q, const SearchOptions& 
     // When no ranker is configured and the caller didn't ask for features we
     // collapse top_n down to `size` for v0.1 behavior (no extra work).
     const bool run_stage2 = opts.ranker != nullptr || opts.collect_features;
-    const std::size_t top_n =
-        run_stage2 ? std::max(opts.rerank_top_n, opts.size) : opts.size;
+    const std::size_t top_n = run_stage2 ? std::max(opts.rerank_top_n, opts.size) : opts.size;
 
     std::priority_queue<ScoredEntry, std::vector<ScoredEntry>, ScoredEntryCmp> heap;
     std::uint64_t total_hits = 0;
@@ -288,8 +287,8 @@ Expected<SearchResult> Searcher::Search(const QueryAst& q, const SearchOptions& 
                         const FieldRead* fr = seg->field(seg_fid);
                         const bool has_pos = fr != nullptr && fr->stats.has_positions;
                         const bool has_w = fr != nullptr && fr->stats.has_token_weights;
-                        TermIterator term_it(seg->PostingBytes(seg_fid, *te), te->df,
-                                             te->total_tf, has_pos, has_w);
+                        TermIterator term_it(
+                            seg->PostingBytes(seg_fid, *te), te->df, te->total_tf, has_pos, has_w);
                         if (term_it.Advance(c.doc_id) == c.doc_id) {
                             item.matched = true;
                             item.tf = term_it.Freq();

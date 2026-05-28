@@ -80,8 +80,8 @@ FeatureVector ExtractFeatures(const CandidateContext& ctx, const Bm25Params& par
         if (!l.matched)
             continue;
         ++matched;
-        const double sc = Bm25Score(l.idf, l.tf, l.field_len, l.avg_field_len, params)
-                          * static_cast<double>(l.boost);
+        const double sc = Bm25Score(l.idf, l.tf, l.field_len, l.avg_field_len, params) *
+                          static_cast<double>(l.boost);
         bm25_total += sc;
         tf_sum += static_cast<double>(l.tf);
         idf_sum += l.idf;

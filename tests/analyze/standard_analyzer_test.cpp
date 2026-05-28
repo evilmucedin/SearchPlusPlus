@@ -1,6 +1,7 @@
 #include "spp/analyze/analyzer.h"
 #include "spp/analyze/token.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
