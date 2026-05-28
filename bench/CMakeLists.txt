@@ -11,6 +11,10 @@ function(spp_add_bench name src)
   target_link_libraries(${name} PRIVATE spp_core benchmark::benchmark benchmark::benchmark_main)
   target_include_directories(${name} PRIVATE ${CMAKE_SOURCE_DIR}/src)
   spp_apply_warnings(${name})
+  # Benches link the sanitizer-instrumented spp_core, so they must also pull
+  # in the matching runtime — otherwise asan/ubsan symbols go unresolved at
+  # link time on the asan preset and on macOS.
+  spp_apply_sanitizers(${name})
 endfunction()
 
 spp_add_bench(posting_list_bench       posting_list_bench.cpp)

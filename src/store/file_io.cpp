@@ -33,7 +33,7 @@ std::intptr_t NativeHandle(std::FILE* fp) {
     int fd = _fileno(fp);
     if (fd < 0)
         return -1;
-    return reinterpret_cast<std::intptr_t>(_get_osfhandle(fd));
+    return static_cast<std::intptr_t>(_get_osfhandle(fd));
 #else
     return ::fileno(fp);
 #endif
