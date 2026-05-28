@@ -13,14 +13,17 @@
 #include "spp/query/ranker.h"
 #include "spp/query/searcher.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <semaphore>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -64,6 +67,12 @@ class SearchServer::Impl {
  public:
     explicit Impl(SearchServerOptions opts) : opts_(std::move(opts)) {}
 
+    static std::size_t AutoConcurrency() {
+        const unsigned hw = std::thread::hardware_concurrency();
+        const std::size_t two_x = hw == 0 ? 0u : static_cast<std::size_t>(hw) * 2u;
+        return std::max<std::size_t>(two_x, 4u);
+    }
+
     Status Start() {
         std::error_code ec;
         std::filesystem::create_directories(opts_.index_dir, ec);
@@ -86,12 +95,29 @@ class SearchServer::Impl {
         router_ = std::make_shared<http::Router>();
         BuildRoutes();
 
+        if (opts_.worker_threads == 0)
+            opts_.worker_threads = AutoConcurrency();
+        if (opts_.max_concurrent_searches == 0)
+            opts_.max_concurrent_searches = AutoConcurrency();
+        // counting_semaphore takes a signed initial counter; downcast is safe
+        // since AutoConcurrency() returns at least 4 and any operator-provided
+        // override is bounded by the int we accept on the CLI.
+        search_slots_ = std::make_unique<std::counting_semaphore<>>(
+            static_cast<std::ptrdiff_t>(opts_.max_concurrent_searches));
+
         http::HttpServerOptions http_opts;
         http_opts.host = opts_.host;
         http_opts.port = opts_.port;
         http_opts.worker_threads = opts_.worker_threads;
         http_server_ = std::make_unique<http::HttpServer>(std::move(http_opts), router_);
         return http_server_->Start();
+    }
+
+    std::size_t PeakInFlightSearches() const noexcept {
+        return peak_in_flight_.load(std::memory_order_relaxed);
+    }
+    std::size_t MaxConcurrentSearches() const noexcept {
+        return opts_.max_concurrent_searches;
     }
 
     void Stop() {
@@ -321,7 +347,40 @@ class SearchServer::Impl {
         return JsonResponse(200, spp::json::JsonValue(std::move(ok)));
     }
 
+    // RAII guard: blocks until a search slot is available, releases on
+    // destruction. Excess concurrent searches wait here — the HTTP worker
+    // running this handler stays parked but does NOT busy-spin; the semaphore
+    // suspends it on a kernel wait until a peer completes.
+    struct SearchSlot {
+        SearchSlot(std::counting_semaphore<>& sem,
+                   std::atomic<std::size_t>& in_flight,
+                   std::atomic<std::size_t>& peak)
+            : sem_(sem), in_flight_(in_flight), peak_(peak) {
+            sem_.acquire();
+            const std::size_t now = in_flight_.fetch_add(1, std::memory_order_relaxed) + 1;
+            std::size_t observed = peak_.load(std::memory_order_relaxed);
+            while (now > observed &&
+                   !peak_.compare_exchange_weak(
+                       observed, now, std::memory_order_relaxed, std::memory_order_relaxed)) {
+            }
+        }
+        ~SearchSlot() {
+            in_flight_.fetch_sub(1, std::memory_order_relaxed);
+            sem_.release();
+        }
+        SearchSlot(const SearchSlot&) = delete;
+        SearchSlot& operator=(const SearchSlot&) = delete;
+
+     private:
+        std::counting_semaphore<>& sem_;
+        std::atomic<std::size_t>& in_flight_;
+        std::atomic<std::size_t>& peak_;
+    };
+
     http::HttpResponse Search(const http::HttpRequest& req) {
+        // Cheap pre-checks (route param + index lookup + reader availability)
+        // run *outside* the slot — they cost microseconds and would otherwise
+        // burn one of a small number of concurrency tokens for trivial work.
         auto it = req.path_params.find("index");
         if (it == req.path_params.end())
             return ErrorJson(400, "bad_request", "missing index name");
@@ -333,6 +392,8 @@ class SearchServer::Impl {
         auto reader = w->CurrentReader();
         if (!reader)
             return ErrorJson(503, "unavailable", "no reader yet");
+
+        SearchSlot slot(*search_slots_, in_flight_searches_, peak_in_flight_);
 
         const auto params = req.QueryParams();
         std::string q;
@@ -465,6 +526,11 @@ class SearchServer::Impl {
     std::mutex rankers_mu_;
     std::unordered_map<std::string, std::shared_ptr<const spp::query::LinearRanker>>
         linear_rankers_;
+    // counting_semaphore is neither movable nor copyable, so we hold it by
+    // unique_ptr and build it in Start() once the auto-cap is resolved.
+    std::unique_ptr<std::counting_semaphore<>> search_slots_;
+    std::atomic<std::size_t> in_flight_searches_{0};
+    std::atomic<std::size_t> peak_in_flight_{0};
 };
 
 SearchServer::SearchServer(SearchServerOptions opts)
@@ -483,6 +549,12 @@ void SearchServer::Stop() {
 }
 std::uint16_t SearchServer::Port() const noexcept {
     return impl_->Port();
+}
+std::size_t SearchServer::PeakInFlightSearches() const noexcept {
+    return impl_->PeakInFlightSearches();
+}
+std::size_t SearchServer::MaxConcurrentSearches() const noexcept {
+    return impl_->MaxConcurrentSearches();
 }
 
 }  // namespace spp::server
