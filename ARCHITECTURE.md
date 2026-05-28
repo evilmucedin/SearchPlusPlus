@@ -129,7 +129,7 @@ To pick up new segments after a flush or merge, the caller asks the writer for a
 
 The on-disk format is segment-based, modeled loosely on Lucene but simplified. A segment is a directory of files sharing a stem (`segment_<gen>_<id>.*`):
 
-- `.tip` / `.tim` — term dictionary (FST → block-encoded term metadata)
+- `.tip` / `.tim` — term dictionary (FST → block-encoded term metadata). **v0.1 implementation note:** the term dictionary is a sorted byte-string list with binary search instead of an FST. The FST upgrade is planned for M5+; the file extensions are reserved so future segments can carry a richer codec without renaming.
 - `.doc` — per-term doc-id posting lists (VarByte + skip table)
 - `.pos` — per-term position lists (optional; absent if field has positions disabled)
 - `.fdt` / `.fdx` — stored fields (compressed, chunked)

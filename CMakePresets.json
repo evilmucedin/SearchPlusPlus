@@ -1,0 +1,96 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Debug (with ASan/UBSan on Linux/macOS)",
+      "binaryDir": "${sourceDir}/build/default",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SPP_BUILD_TESTS": "ON",
+        "SPP_BUILD_BENCH": "ON",
+        "SPP_BUILD_TOOLS": "ON",
+        "SPP_ENABLE_SANITIZERS": "ON"
+      },
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "default-windows",
+      "inherits": "default",
+      "displayName": "Debug (Windows, no sanitizers)",
+      "binaryDir": "${sourceDir}/build/default-windows",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "SPP_ENABLE_SANITIZERS": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "RelWithDebInfo + LTO",
+      "binaryDir": "${sourceDir}/build/release",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "SPP_BUILD_TESTS": "ON",
+        "SPP_BUILD_BENCH": "ON",
+        "SPP_BUILD_TOOLS": "ON",
+        "SPP_ENABLE_SANITIZERS": "OFF",
+        "SPP_ENABLE_LTO": "ON"
+      }
+    },
+    {
+      "name": "asan",
+      "inherits": "default",
+      "displayName": "Debug + ASan/UBSan (forced)",
+      "binaryDir": "${sourceDir}/build/asan",
+      "cacheVariables": {
+        "SPP_ENABLE_SANITIZERS": "ON"
+      },
+      "condition": null
+    }
+  ],
+  "buildPresets": [
+    { "name": "default",         "configurePreset": "default" },
+    { "name": "default-windows", "configurePreset": "default-windows" },
+    { "name": "release",         "configurePreset": "release" },
+    { "name": "asan",            "configurePreset": "asan" }
+  ],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    {
+      "name": "default-windows",
+      "configurePreset": "default-windows",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

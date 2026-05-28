@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs when a new commit lands on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            preset: default
+          - name: linux-clang
+            os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+            preset: default
+          - name: macos-applellvm
+            os: macos-latest
+            cc: clang
+            cxx: clang++
+            preset: default
+          - name: windows-msvc
+            os: windows-latest
+            cc: cl
+            cxx: cl
+            preset: default-windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          if [ "${{ matrix.cc }}" = "clang" ]; then
+            sudo apt-get install -y clang
+          fi
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja --no-progress -y
+
+      - name: Configure MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # vcpkg ships with GitHub-hosted runners. We rely on $VCPKG_INSTALLATION_ROOT.
+      - name: Export vcpkg toolchain (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: echo "CMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+
+      - name: Export vcpkg toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
+
+      - name: Enable GHA binary cache for vcpkg
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake --preset ${{ matrix.preset }} -DCMAKE_TOOLCHAIN_FILE=${{ env.CMAKE_TOOLCHAIN_FILE }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} -j
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
+
+  sanitizers:
+    name: linux-asan-ubsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang
+
+      - name: Export vcpkg toolchain
+        run: echo "CMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+
+      - name: Configure (ASan/UBSan)
+        env:
+          CC: clang
+          CXX: clang++
+        run: cmake --preset asan -DCMAKE_TOOLCHAIN_FILE=${{ env.CMAKE_TOOLCHAIN_FILE }}
+
+      - name: Build
+        run: cmake --build --preset asan -j
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --preset asan --output-on-failure
+
+  benchmarks-smoke:
+    name: linux-bench-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Export vcpkg toolchain
+        run: echo "CMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+
+      - name: Configure (release)
+        run: cmake --preset release -DCMAKE_TOOLCHAIN_FILE=${{ env.CMAKE_TOOLCHAIN_FILE }}
+
+      - name: Build benchmarks
+        run: cmake --build --preset release -j
+
+      # Smoke-run each benchmark binary briefly; no regression gating yet.
+      - name: Run benchmark smoke
+        run: |
+          set -euo pipefail
+          for bin in build/release/bench/*_bench; do
+            if [ -x "$bin" ]; then
+              echo "--- $bin"
+              "$bin" --benchmark_min_time=0.1s --benchmark_repetitions=1
+            fi
+          done
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files '*.cpp' '*.h' '*.hpp' '*.cc')
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No C++ sources to check."
+            exit 0
+          fi
+          clang-format --dry-run --Werror "${files[@]}"
