@@ -93,3 +93,20 @@ script will refuse to run otherwise and tells you what to do.
   scripts/bench_search.py --url http://127.0.0.1:9200 \
       --index wiki --duration 60 --concurrency 32
   ```
+
+- `compare_es.py` / `demo_compare_es.sh` — side-by-side comparison of
+  SearchPlusPlus and ElasticSearch on the same corpus + judgments. Reports
+  search quality (NDCG@10, P@5, MRR) and throughput (req/min, latency
+  percentiles). Requires a Docker daemon for the demo wrapper; the script
+  itself talks to any running ES instance.
+
+  ```bash
+  # Smoke test (starts an ES container, runs spp_serve, prints the table)
+  ./scripts/demo_compare_es.sh
+
+  # Against engines you already run
+  scripts/compare_es.py \
+      --spp-url http://127.0.0.1:9211 --es-url http://127.0.0.1:9200 \
+      --corpus my_corpus.jsonl --judgments my_judgments.jsonl \
+      --duration 30 --concurrency 16
+  ```
