@@ -25,13 +25,26 @@ void AppendU64LE(std::string& out, std::uint64_t v) {
     for (int i = 0; i < 8; ++i)
         out.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
 }
+void AppendU16LE(std::string& out, std::uint16_t v) {
+    out.push_back(static_cast<char>(v & 0xFF));
+    out.push_back(static_cast<char>((v >> 8) & 0xFF));
+}
+void AppendF32LE(std::string& out, float f) {
+    std::uint32_t bits;
+    std::memcpy(&bits, &f, sizeof(bits));
+    AppendU32LE(out, bits);
+}
 void AppendStr(std::string& out, std::string_view s) {
     store::EncodeVarUint32(static_cast<std::uint32_t>(s.size()), out);
     out.append(s);
 }
 
-Status WritePostings(const PostingList& sorted_postings, std::string& out_doc) {
-    // df, then delta-encoded doc-ids and tfs, both varuint.
+Status WritePostings(const PostingList& sorted_postings,
+                     bool has_positions,
+                     bool has_token_weights,
+                     std::string& out_doc) {
+    // df, then delta-encoded doc-ids and tfs, both varuint. Optionally followed
+    // per entry by a u16 first_pos and/or a u8 quantized weight.
     store::EncodeVarUint32(static_cast<std::uint32_t>(sorted_postings.size()), out_doc);
     DocId prev = 0;
     for (std::size_t i = 0; i < sorted_postings.size(); ++i) {
@@ -39,6 +52,10 @@ Status WritePostings(const PostingList& sorted_postings, std::string& out_doc) {
         const std::uint32_t delta = (i == 0) ? p.doc_id : (p.doc_id - prev);
         store::EncodeVarUint32(delta, out_doc);
         store::EncodeVarUint32(p.tf, out_doc);
+        if (has_positions)
+            AppendU16LE(out_doc, p.first_pos);
+        if (has_token_weights)
+            out_doc.push_back(static_cast<char>(QuantizeTokenWeight(p.max_token_weight)));
         prev = p.doc_id;
     }
     return Status::Ok();
@@ -64,6 +81,11 @@ Expected<SegmentInfo> SealSegment(MutableSegment& segment,
     for (std::size_t fi = 0; fi < schema.field_count(); ++fi) {
         FieldStats fs;
         fs.name = schema.fields()[fi].name;
+        const FieldMapping& fm = schema.fields()[fi];
+        fs.boost = fm.boost;
+        fs.position_decay = fm.position_decay;
+        fs.has_positions = fm.position_decay > 0.0f;
+        fs.has_token_weights = fm.store_token_weights;
         const MutableFieldData& fd = segment.field_data()[fi];
         fs.doc_count = fd.doc_count;
         fs.sum_field_length = fd.sum_field_length;
@@ -94,7 +116,7 @@ Expected<SegmentInfo> SealSegment(MutableSegment& segment,
             for (const auto& p : pl)
                 total_tf += p.tf;
 
-            SPP_RETURN_IF_ERROR(WritePostings(pl, doc_buf));
+            SPP_RETURN_IF_ERROR(WritePostings(pl, fs.has_positions, fs.has_token_weights, doc_buf));
             const std::uint64_t postings_bytes = doc_buf.size() - postings_offset;
 
             // Term dictionary entry: term, df, total_tf, postings_offset_within_field,
@@ -137,6 +159,12 @@ Expected<SegmentInfo> SealSegment(MutableSegment& segment,
         store::EncodeVarUint64(fs.tim_size, si_buf);
         store::EncodeVarUint64(fs.doc_offset, si_buf);
         store::EncodeVarUint64(fs.doc_size, si_buf);
+        // v2 fields appended after the v1 trailing block. Reader uses the
+        // file's format_version to decide whether to consume them.
+        AppendF32LE(si_buf, fs.boost);
+        AppendF32LE(si_buf, fs.position_decay);
+        si_buf.push_back(static_cast<char>(fs.has_positions ? 1 : 0));
+        si_buf.push_back(static_cast<char>(fs.has_token_weights ? 1 : 0));
     }
 
     // Write each file and fsync.
@@ -153,6 +181,21 @@ Expected<SegmentInfo> SealSegment(MutableSegment& segment,
     SPP_RETURN_IF_ERROR(write_one(kSegStoredExt, fdt_buf));
     SPP_RETURN_IF_ERROR(write_one(kSegStoredIdxExt, fdx_buf));
     SPP_RETURN_IF_ERROR(write_one(kSegInfoExt, si_buf));
+
+    // .dvq is only emitted when the schema opted into per-doc quality storage.
+    // Even when on, the file is small: 8 bytes header + 4 bytes per doc.
+    if (schema.store_doc_quality()) {
+        std::string dvq_buf;
+        AppendU32LE(dvq_buf, kSegDocQualityMagic);
+        AppendU32LE(dvq_buf, static_cast<std::uint32_t>(segment.doc_count()));
+        const auto& q = segment.doc_quality();
+        for (DocId i = 0; i < segment.doc_count(); ++i) {
+            const float v = (i < q.size()) ? q[i] : 0.0f;
+            AppendF32LE(dvq_buf, v);
+        }
+        SPP_RETURN_IF_ERROR(write_one(kSegDocQualityExt, dvq_buf));
+    }
+
     SPP_RETURN_IF_ERROR(dir.Sync());
 
     return info;

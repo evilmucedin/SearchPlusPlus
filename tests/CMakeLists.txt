@@ -46,6 +46,8 @@ spp_add_test_target(query_test
   query/iterators_test.cpp
   query/bm25_test.cpp
   query/searcher_test.cpp
+  query/features_test.cpp
+  query/ranker_test.cpp
 )
 
 spp_add_test_target(http_test
@@ -57,4 +59,6 @@ spp_add_test_target(integration_test
   integration/e2e_http_test.cpp
   integration/nrt_test.cpp
   integration/crash_recovery_test.cpp
+  integration/rerank_test.cpp
+  integration/ltr_storage_test.cpp
 )

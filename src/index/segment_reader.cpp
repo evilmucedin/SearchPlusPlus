@@ -47,6 +47,15 @@ Expected<std::string_view> ReadStrView(const char*& p, const char* end) {
     return out;
 }
 
+Expected<float> ReadF32LE(const char*& p, const char* end) {
+    auto bits = ReadU32LE(p, end);
+    if (!bits.ok())
+        return bits.status();
+    float f;
+    std::memcpy(&f, &*bits, sizeof(f));
+    return f;
+}
+
 }  // namespace
 
 Expected<std::unique_ptr<SegmentReader>> SegmentReader::Open(store::Directory& dir,
@@ -107,6 +116,16 @@ Expected<std::unique_ptr<SegmentReader>> SegmentReader::Open(store::Directory& d
             fs.doc_offset = pdo;
             SPP_ASSIGN_OR_RETURN(auto pds, store::DecodeVarUint64(p, end));
             fs.doc_size = pds;
+            // v0.2 trailing block: boost, position_decay, has_positions, has_token_weights.
+            SPP_ASSIGN_OR_RETURN(auto boost, ReadF32LE(p, end));
+            fs.boost = boost;
+            SPP_ASSIGN_OR_RETURN(auto pdec, ReadF32LE(p, end));
+            fs.position_decay = pdec;
+            if (end - p < 2)
+                return Status::Corruption(".si truncated at field flags");
+            fs.has_positions = (p[0] != 0);
+            fs.has_token_weights = (p[1] != 0);
+            p += 2;
             FieldRead fr;
             fr.stats = std::move(fs);
             reader->fields_.push_back(std::move(fr));
@@ -172,6 +191,28 @@ Expected<std::unique_ptr<SegmentReader>> SegmentReader::Open(store::Directory& d
         }
     }
 
+    // v0.2: .dvq is optional. A missing file simply means no per-doc quality
+    // was stored in this segment; it is not an error.
+    {
+        auto dvq_src = dir.ReadFile(reader->info_.stem + kSegDocQualityExt);
+        if (dvq_src.ok()) {
+            const std::string_view sv = (*dvq_src).view();
+            const char* p = sv.data();
+            const char* end = p + sv.size();
+            SPP_ASSIGN_OR_RETURN(auto magic, ReadU32LE(p, end));
+            if (magic != kSegDocQualityMagic)
+                return Status::Corruption(".dvq bad magic");
+            SPP_ASSIGN_OR_RETURN(auto count, ReadU32LE(p, end));
+            if (count != reader->info_.doc_count)
+                return Status::Corruption(".dvq doc count mismatch");
+            reader->doc_quality_.reserve(count);
+            for (std::uint32_t i = 0; i < count; ++i) {
+                SPP_ASSIGN_OR_RETURN(auto v, ReadF32LE(p, end));
+                reader->doc_quality_.push_back(v);
+            }
+        }
+    }
+
     return reader;
 }
 
@@ -210,6 +251,12 @@ std::string_view SegmentReader::PostingBytes(FieldId field_id, const TermEntry& 
     if (abs_off + te.postings_bytes > doc_buf_.size())
         return {};
     return std::string_view{doc_buf_.data() + abs_off, te.postings_bytes};
+}
+
+float SegmentReader::DocQuality(DocId id) const {
+    if (id >= doc_quality_.size())
+        return 0.0f;
+    return doc_quality_[id];
 }
 
 std::string_view SegmentReader::StoredFields(DocId id) const {

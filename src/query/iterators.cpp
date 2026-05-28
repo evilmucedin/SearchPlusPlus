@@ -1,9 +1,11 @@
 #include "spp/query/iterators.h"
 
 #include "spp/base/types.h"
+#include "spp/index/segment_info.h"
 #include "spp/store/varbyte.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -11,33 +13,21 @@
 
 namespace spp::query {
 
-namespace {
-
-DocId DecodeNext(
-    const char*& cursor, const char* end, DocId prev, std::uint32_t& freq_out, bool first) {
-    if (cursor >= end)
-        return kNoMoreDocs;
-    auto delta = store::DecodeVarUint32(cursor, end);
-    if (!delta.ok())
-        return kNoMoreDocs;
-    auto tf = store::DecodeVarUint32(cursor, end);
-    if (!tf.ok())
-        return kNoMoreDocs;
-    freq_out = *tf;
-    return first ? *delta : prev + *delta;
-}
-
-}  // namespace
-
 // ---- TermIterator -------------------------------------------------------------------
 
-TermIterator::TermIterator(std::string_view posting_bytes, std::uint32_t df, std::uint64_t total_tf)
+TermIterator::TermIterator(std::string_view posting_bytes,
+                           std::uint32_t df,
+                           std::uint64_t total_tf,
+                           bool has_positions,
+                           bool has_token_weights)
     : bytes_(posting_bytes),
       cursor_(posting_bytes.data()),
       end_(posting_bytes.data() + posting_bytes.size()),
       remaining_(0),
       df_(df),
-      total_tf_(total_tf) {
+      total_tf_(total_tf),
+      has_positions_(has_positions),
+      has_token_weights_(has_token_weights) {
     auto count = store::DecodeVarUint32(cursor_, end_);
     if (count.ok())
         remaining_ = *count;
@@ -52,11 +42,49 @@ DocId TermIterator::Next() {
         current_ = kNoMoreDocs;
         return current_;
     }
-    DocId d = DecodeNext(cursor_, end_, prev_, current_freq_, !started_);
-    if (d == kNoMoreDocs) {
+    if (cursor_ >= end_) {
         current_ = kNoMoreDocs;
         return current_;
     }
+    auto delta = store::DecodeVarUint32(cursor_, end_);
+    if (!delta.ok()) {
+        current_ = kNoMoreDocs;
+        return current_;
+    }
+    auto tf = store::DecodeVarUint32(cursor_, end_);
+    if (!tf.ok()) {
+        current_ = kNoMoreDocs;
+        return current_;
+    }
+    current_freq_ = *tf;
+
+    if (has_positions_) {
+        if (end_ - cursor_ < 2) {
+            current_ = kNoMoreDocs;
+            return current_;
+        }
+        const std::uint8_t lo = static_cast<std::uint8_t>(cursor_[0]);
+        const std::uint8_t hi = static_cast<std::uint8_t>(cursor_[1]);
+        current_pos_ =
+            static_cast<std::uint16_t>(lo) | static_cast<std::uint16_t>(hi << 8);
+        cursor_ += 2;
+    } else {
+        current_pos_ = spp::index::kNoPosition;
+    }
+
+    if (has_token_weights_) {
+        if (cursor_ >= end_) {
+            current_ = kNoMoreDocs;
+            return current_;
+        }
+        current_weight_ =
+            spp::index::DequantizeTokenWeight(static_cast<std::uint8_t>(*cursor_));
+        ++cursor_;
+    } else {
+        current_weight_ = 1.0f;
+    }
+
+    const DocId d = !started_ ? *delta : prev_ + *delta;
     started_ = true;
     prev_ = d;
     --remaining_;

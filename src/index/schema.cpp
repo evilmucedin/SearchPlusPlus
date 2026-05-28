@@ -58,10 +58,14 @@ spp::json::JsonValue Schema::ToJson() const {
         o["type"] = std::string{FieldTypeName(f.type)};
         o["analyzer"] = f.analyzer;
         o["stored"] = f.stored;
+        o["boost"] = static_cast<double>(f.boost);
+        o["position_decay"] = static_cast<double>(f.position_decay);
+        o["store_token_weights"] = f.store_token_weights;
         arr.push_back(spp::json::JsonValue{std::move(o)});
     }
     spp::json::JsonObject root;
     root["fields"] = spp::json::JsonValue{std::move(arr)};
+    root["store_doc_quality"] = store_doc_quality_;
     return spp::json::JsonValue{std::move(root)};
 }
 
@@ -91,11 +95,19 @@ Expected<Schema> Schema::FromJson(const spp::json::JsonValue& v) {
             m.analyzer = a->as_string();
         if (const auto* st = fv.find("stored"); st && st->is_bool())
             m.stored = st->as_bool();
+        if (const auto* b = fv.find("boost"); b && b->is_number())
+            m.boost = static_cast<float>(b->as_double());
+        if (const auto* pd = fv.find("position_decay"); pd && pd->is_number())
+            m.position_decay = static_cast<float>(pd->as_double());
+        if (const auto* w = fv.find("store_token_weights"); w && w->is_bool())
+            m.store_token_weights = w->as_bool();
         SPP_RETURN_IF_ERROR(s.AddField(std::move(m)));
     }
     if (!s.HasField(kIdField)) {
         return Status::InvalidArgument("schema must define an '_id' field");
     }
+    if (const auto* q = v.find("store_doc_quality"); q && q->is_bool())
+        s.store_doc_quality_ = q->as_bool();
     return s;
 }
 
@@ -131,6 +143,12 @@ Expected<Schema> Schema::FromMappingsJson(const spp::json::JsonValue& mappings) 
             m.analyzer = a->as_string();
         if (const auto* st = cfg.find("stored"); st && st->is_bool())
             m.stored = st->as_bool();
+        if (const auto* b = cfg.find("boost"); b && b->is_number())
+            m.boost = static_cast<float>(b->as_double());
+        if (const auto* pd = cfg.find("position_decay"); pd && pd->is_number())
+            m.position_decay = static_cast<float>(pd->as_double());
+        if (const auto* w = cfg.find("store_token_weights"); w && w->is_bool())
+            m.store_token_weights = w->as_bool();
         SPP_RETURN_IF_ERROR(s.AddField(std::move(m)));
     }
     return s;

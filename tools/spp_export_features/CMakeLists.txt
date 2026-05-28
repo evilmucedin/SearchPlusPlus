@@ -1,0 +1,4 @@
+add_executable(spp_export_features main.cpp)
+target_link_libraries(spp_export_features PRIVATE spp_core)
+spp_apply_warnings(spp_export_features)
+spp_apply_sanitizers(spp_export_features)

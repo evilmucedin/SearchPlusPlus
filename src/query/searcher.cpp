@@ -5,9 +5,11 @@
 #include "spp/index/segment_reader.h"
 #include "spp/json/json_parser.h"
 #include "spp/json/json_value.h"
+#include "spp/query/features.h"
 #include "spp/query/iterators.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <memory>
 #include <queue>
 #include <string>
@@ -91,6 +93,9 @@ std::unique_ptr<DocIdSetIterator> Build(const QueryAst& q,
 
             std::vector<std::unique_ptr<DocIdSetIterator>> kids;
             kids.reserve(toks.size());
+            const FieldRead* fr = seg.field(fid);
+            const bool has_pos = fr != nullptr && fr->stats.has_positions;
+            const bool has_w = fr != nullptr && fr->stats.has_token_weights;
             for (const auto& t : toks) {
                 const TermEntry* te = seg.FindTerm(fid, t.text);
                 if (te == nullptr) {
@@ -98,7 +103,7 @@ std::unique_ptr<DocIdSetIterator> Build(const QueryAst& q,
                     return std::make_unique<MatchAllIterator>(0);
                 }
                 kids.push_back(std::make_unique<TermIterator>(
-                    seg.PostingBytes(fid, *te), te->df, te->total_tf));
+                    seg.PostingBytes(fid, *te), te->df, te->total_tf, has_pos, has_w));
             }
             if (kids.size() == 1)
                 return std::move(kids[0]);
@@ -195,19 +200,23 @@ Expected<SearchResult> Searcher::Search(const QueryAst& q, const SearchOptions& 
         avg_dl_by_field[name] = (n == 0) ? 0.0 : static_cast<double>(sum) / static_cast<double>(n);
     }
 
+    // Stage 1: BM25 candidate selection. We keep the top `rerank_top_n` docs
+    // (by BM25 only) per query — that's the recall pool that Stage 2 reranks.
+    // When no ranker is configured and the caller didn't ask for features we
+    // collapse top_n down to `size` for v0.1 behavior (no extra work).
+    const bool run_stage2 = opts.ranker != nullptr || opts.collect_features;
+    const std::size_t top_n =
+        run_stage2 ? std::max(opts.rerank_top_n, opts.size) : opts.size;
+
     std::priority_queue<ScoredEntry, std::vector<ScoredEntry>, ScoredEntryCmp> heap;
     std::uint64_t total_hits = 0;
 
-    // Pre-collect TermIterators per leaf for scoring (we re-create them in Build, so we
-    // do a second pass here to compute per-doc score).
     for (std::size_t si = 0; si < r.segments().size(); ++si) {
         const auto& seg = r.segments()[si];
-        // Build the master iterator for this segment.
         auto it = Build(q, *seg, r.schema());
         DocId d = it->Next();
         while (d != kNoMoreDocs) {
             ++total_hits;
-            // Score: sum BM25 contributions for each unique (field, term) leaf present at d.
             double score = 0.0;
             for (const auto& l : leaves) {
                 const auto fid = seg->GetFieldId(l.field_name);
@@ -221,13 +230,12 @@ Expected<SearchResult> Searcher::Search(const QueryAst& q, const SearchOptions& 
                     continue;
                 const std::uint32_t tf = term_it.Freq();
                 const double idf = idf_by_key[key_of(l.field_name, l.text)];
-                // doc_len: we don't store per-doc field lengths in v0.1 — use the field average
-                // as a proxy. This is a known approximation documented in DESIGN/M2; we can
-                // add per-doc norms later.
+                // doc_len: we don't store per-doc field lengths in v0.2 — use the field average
+                // as a proxy. Documented in features.h as a known approximation.
                 const double avg = avg_dl_by_field[l.field_name];
                 score += Bm25Score(idf, tf, avg, avg, opts.bm25);
             }
-            if (heap.size() < opts.size) {
+            if (heap.size() < top_n) {
                 heap.push(ScoredEntry{score, static_cast<std::uint32_t>(si), d});
             } else if (score > heap.top().score) {
                 heap.pop();
@@ -238,24 +246,91 @@ Expected<SearchResult> Searcher::Search(const QueryAst& q, const SearchOptions& 
     }
 
     result.total_hits = total_hits;
-    std::vector<ScoredEntry> ordered;
-    ordered.reserve(heap.size());
+
+    std::vector<ScoredEntry> candidates;
+    candidates.reserve(heap.size());
     while (!heap.empty()) {
-        ordered.push_back(heap.top());
+        candidates.push_back(heap.top());
         heap.pop();
     }
-    std::sort(ordered.begin(), ordered.end(), [](const ScoredEntry& a, const ScoredEntry& b) {
-        return a.score > b.score;
-    });
 
-    result.hits.reserve(ordered.size());
-    for (const auto& s : ordered) {
+    // Stage 2: optional re-rank and/or feature collection. We rebuild per-leaf
+    // state at each candidate doc and either feed the Ranker, capture the
+    // FeatureVector, or both. Cost is O(top_n * num_leaves).
+    std::vector<FeatureVector> features_by_index;
+    if (run_stage2 && !candidates.empty()) {
+        features_by_index.resize(candidates.size());
+        const Schema& schema = r.schema();
+        for (std::size_t i = 0; i < candidates.size(); ++i) {
+            auto& c = candidates[i];
+            const auto& seg = r.segments()[c.segment_index];
+            CandidateContext cctx;
+            cctx.segment = seg.get();
+            cctx.schema = &schema;
+            cctx.doc_id = c.doc_id;
+            cctx.num_query_leaves = leaves.size();
+            cctx.leaves.reserve(leaves.size());
+            for (const auto& l : leaves) {
+                LeafContextItem item;
+                item.idf = idf_by_key[key_of(l.field_name, l.text)];
+                item.avg_field_len = avg_dl_by_field[l.field_name];
+                item.field_len = item.avg_field_len;  // proxy, same as Stage 1
+
+                const auto seg_fid = seg->GetFieldId(l.field_name);
+                if (seg_fid != kInvalidFieldId) {
+                    item.field_id = seg_fid;
+                    if (const auto* fr = seg->field(seg_fid); fr != nullptr) {
+                        item.boost = fr->stats.boost;
+                        item.position_decay = fr->stats.position_decay;
+                    }
+                    const TermEntry* te = seg->FindTerm(seg_fid, l.text);
+                    if (te != nullptr) {
+                        const FieldRead* fr = seg->field(seg_fid);
+                        const bool has_pos = fr != nullptr && fr->stats.has_positions;
+                        const bool has_w = fr != nullptr && fr->stats.has_token_weights;
+                        TermIterator term_it(seg->PostingBytes(seg_fid, *te), te->df,
+                                             te->total_tf, has_pos, has_w);
+                        if (term_it.Advance(c.doc_id) == c.doc_id) {
+                            item.matched = true;
+                            item.tf = term_it.Freq();
+                            if (has_pos)
+                                item.first_pos = term_it.Position();
+                            if (has_w)
+                                item.token_weight = term_it.TokenWeight();
+                        }
+                    }
+                }
+                cctx.leaves.push_back(item);
+            }
+            FeatureVector fv = ExtractFeatures(cctx, opts.bm25);
+            if (opts.ranker != nullptr)
+                c.score = static_cast<double>(opts.ranker->Score(fv));
+            features_by_index[i] = fv;
+        }
+    }
+
+    // Stage 3: sort, truncate to `size`, hydrate stored fields.
+    // We sort indices first so we can re-attach the matching FeatureVector
+    // alongside each Hit when collect_features is true.
+    std::vector<std::size_t> order(candidates.size());
+    for (std::size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    std::sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        return candidates[a].score > candidates[b].score;
+    });
+    if (order.size() > opts.size)
+        order.resize(opts.size);
+
+    result.hits.reserve(order.size());
+    if (opts.collect_features)
+        result.features.reserve(order.size());
+    for (std::size_t idx : order) {
+        const auto& s = candidates[idx];
         Hit h;
         h.score = s.score;
         const auto& seg = r.segments()[s.segment_index];
         const std::string_view stored = seg->StoredFields(s.doc_id);
         h.stored_fields_json.assign(stored.data(), stored.size());
-        // Parse to extract _id (cheap; the doc is tiny by construction).
         auto parsed = spp::json::Parse(stored);
         if (parsed.ok() && parsed->is_object()) {
             if (const auto* idv = parsed->find(std::string{spp::index::Schema::kIdField});
@@ -264,6 +339,9 @@ Expected<SearchResult> Searcher::Search(const QueryAst& q, const SearchOptions& 
             }
         }
         result.hits.push_back(std::move(h));
+        if (opts.collect_features) {
+            result.features.push_back(features_by_index[idx]);
+        }
     }
     return result;
 }

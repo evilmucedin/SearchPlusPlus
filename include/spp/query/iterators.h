@@ -1,6 +1,7 @@
 #pragma once
 
 #include "spp/base/types.h"
+#include "spp/index/segment_info.h"
 #include "spp/index/segment_reader.h"
 
 #include <cstdint>
@@ -9,6 +10,8 @@
 #include <vector>
 
 namespace spp::query {
+
+class TermIterator;  // forward
 
 // Doc-id set iterator interface used by every operator in the plan.
 class DocIdSetIterator {
@@ -23,12 +26,24 @@ class DocIdSetIterator {
     virtual std::uint32_t Freq() const {
         return 0;
     }
+
+    // Walks the operator tree and collects every leaf TermIterator. The
+    // feature extractor needs per-leaf access to TF/position/weight; the
+    // aggregated Freq() from Conjunction/Disjunction is enough for BM25 but
+    // too coarse for LTR.
+    virtual void CollectLeaves(std::vector<TermIterator*>&) {}
 };
 
 // Decodes the per-term posting list from a SegmentReader.
 class TermIterator final : public DocIdSetIterator {
  public:
-    TermIterator(std::string_view posting_bytes, std::uint32_t df, std::uint64_t total_tf);
+    // has_positions / has_token_weights describe the layout of the posting
+    // bytes; both default to false so v0.1 callers compile unchanged.
+    TermIterator(std::string_view posting_bytes,
+                 std::uint32_t df,
+                 std::uint64_t total_tf,
+                 bool has_positions = false,
+                 bool has_token_weights = false);
 
     DocId Next() override;
     DocId Advance(DocId target) override;
@@ -41,12 +56,30 @@ class TermIterator final : public DocIdSetIterator {
     std::uint32_t Freq() const override {
         return current_freq_;
     }
+    void CollectLeaves(std::vector<TermIterator*>& out) override {
+        out.push_back(this);
+    }
 
     std::uint32_t df() const noexcept {
         return df_;
     }
     std::uint64_t total_tf() const noexcept {
         return total_tf_;
+    }
+    // Returns the first-occurrence position of this term in the current doc,
+    // or spp::index::kNoPosition when positions are not stored.
+    std::uint16_t Position() const noexcept {
+        return current_pos_;
+    }
+    // Returns the per-(term, doc) token weight, or 1.0 when not stored.
+    float TokenWeight() const noexcept {
+        return current_weight_;
+    }
+    bool has_positions() const noexcept {
+        return has_positions_;
+    }
+    bool has_token_weights() const noexcept {
+        return has_token_weights_;
     }
 
  private:
@@ -56,9 +89,13 @@ class TermIterator final : public DocIdSetIterator {
     std::uint32_t remaining_;
     std::uint32_t df_;
     std::uint64_t total_tf_;
+    bool has_positions_;
+    bool has_token_weights_;
     DocId current_ = kNoMoreDocs;
     DocId prev_ = 0;
     std::uint32_t current_freq_ = 0;
+    std::uint16_t current_pos_ = spp::index::kNoPosition;
+    float current_weight_ = 1.0f;
     bool started_ = false;
 };
 
@@ -75,6 +112,10 @@ class ConjunctionIterator final : public DocIdSetIterator {
     std::int64_t Cost() const override;
     std::uint32_t Freq() const override {
         return total_freq_;
+    }
+    void CollectLeaves(std::vector<TermIterator*>& out) override {
+        for (auto& c : children_)
+            c->CollectLeaves(out);
     }
 
  private:
@@ -96,6 +137,10 @@ class DisjunctionIterator final : public DocIdSetIterator {
     std::int64_t Cost() const override;
     std::uint32_t Freq() const override {
         return total_freq_;
+    }
+    void CollectLeaves(std::vector<TermIterator*>& out) override {
+        for (auto& c : children_)
+            c->CollectLeaves(out);
     }
 
  private:
