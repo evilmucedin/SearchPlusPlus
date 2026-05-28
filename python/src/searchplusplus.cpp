@@ -10,12 +10,12 @@
 
 #include "spp/spp.h"
 
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
-
 #include <memory>
 #include <string>
 #include <string_view>
+
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 namespace py = pybind11;
 
@@ -89,8 +89,7 @@ PYBIND11_MODULE(searchplusplus, m) {
                 return self.HasField(name);
             },
             py::arg("name"))
-        .def("field_count",
-             [](const spp::index::Schema& self) { return self.field_count(); });
+        .def("field_count", [](const spp::index::Schema& self) { return self.field_count(); });
 
     py::class_<spp::index::Document>(m, "Document")
         .def(py::init<>())
@@ -103,14 +102,12 @@ PYBIND11_MODULE(searchplusplus, m) {
     // the non-const version and const_pointer_cast at the C++ boundary; this
     // is purely a marshalling trick — no mutating methods are exposed to
     // Python so the object stays effectively read-only.
-    py::class_<spp::index::IndexReader, std::shared_ptr<spp::index::IndexReader>>(
-        m, "IndexReader");
+    py::class_<spp::index::IndexReader, std::shared_ptr<spp::index::IndexReader>>(m, "IndexReader");
 
     // IndexWriter is non-copyable; pybind11 needs a holder that can own a
     // unique_ptr. We give it the std::unique_ptr holder so transferring
     // ownership from the C++ factory works without an extra Move.
-    py::class_<spp::index::IndexWriter, std::unique_ptr<spp::index::IndexWriter>>(
-        m, "IndexWriter")
+    py::class_<spp::index::IndexWriter, std::unique_ptr<spp::index::IndexWriter>>(m, "IndexWriter")
         .def_static(
             "open",
             [](const std::string& dir_path, const spp::index::Schema* initial_schema) {
@@ -131,14 +128,10 @@ PYBIND11_MODULE(searchplusplus, m) {
             py::arg("doc"))
         .def(
             "refresh",
-            [](spp::index::IndexWriter& self) {
-                return Unwrap(self.Refresh());
-            },
+            [](spp::index::IndexWriter& self) { return Unwrap(self.Refresh()); },
             "Seal the in-memory segment and publish a new reader. Returns the "
             "new generation.")
-        .def(
-            "close",
-            [](spp::index::IndexWriter& self) { RaiseFromStatus(self.Close()); })
+        .def("close", [](spp::index::IndexWriter& self) { RaiseFromStatus(self.Close()); })
         .def(
             "current_reader",
             [](const spp::index::IndexWriter& self) {
