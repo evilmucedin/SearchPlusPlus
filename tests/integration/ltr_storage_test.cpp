@@ -32,7 +32,8 @@ spp::index::Schema MakeLtrSchema() {
       "body":  {"type":"text","stored":true,
                 "position_decay":0.5,
                 "store_token_weights":true}
-    })").value();
+    })")
+                 .value();
     auto s = spp::index::Schema::FromMappingsJson(v).value();
     s.set_store_doc_quality(true);
     return s;
@@ -54,11 +55,10 @@ TEST(LtrStorageTest, PositionsTokenWeightsAndQualityRoundtrip) {
     // Weights aligned with the body token stream.
     d.field_token_weights["body"] = {0.5f, 2.0f, 1.5f};
     d.doc_quality = 0.75f;
-    ASSERT_TRUE(
-        writer->AddDocument(
-                  d,
-                  R"({"_id":"doc1","title":"alpha beta gamma","body":"alpha beta gamma"})")
-            .ok());
+    ASSERT_TRUE(writer
+                    ->AddDocument(
+                        d, R"({"_id":"doc1","title":"alpha beta gamma","body":"alpha beta gamma"})")
+                    .ok());
 
     ASSERT_TRUE(writer->Refresh().ok());
     auto reader = writer->CurrentReader();
@@ -91,9 +91,11 @@ TEST(LtrStorageTest, PositionsTokenWeightsAndQualityRoundtrip) {
     // the matching token weight (2.0, quantized).
     const auto* te_beta = seg->FindTerm(body_fid, "beta");
     ASSERT_NE(te_beta, nullptr);
-    spp::query::TermIterator it(
-        seg->PostingBytes(body_fid, *te_beta), te_beta->df, te_beta->total_tf,
-        /*has_positions=*/true, /*has_token_weights=*/true);
+    spp::query::TermIterator it(seg->PostingBytes(body_fid, *te_beta),
+                                te_beta->df,
+                                te_beta->total_tf,
+                                /*has_positions=*/true,
+                                /*has_token_weights=*/true);
     ASSERT_EQ(it.Next(), 0);  // doc0 is the only doc
     EXPECT_EQ(it.Position(), 1u);
     EXPECT_NEAR(it.TokenWeight(), 2.0f, 0.05f);  // q8 round-trip tolerance
@@ -101,9 +103,11 @@ TEST(LtrStorageTest, PositionsTokenWeightsAndQualityRoundtrip) {
     // First token of body ("alpha") should report position 0, weight 0.5.
     const auto* te_alpha = seg->FindTerm(body_fid, "alpha");
     ASSERT_NE(te_alpha, nullptr);
-    spp::query::TermIterator it2(
-        seg->PostingBytes(body_fid, *te_alpha), te_alpha->df, te_alpha->total_tf,
-        /*has_positions=*/true, /*has_token_weights=*/true);
+    spp::query::TermIterator it2(seg->PostingBytes(body_fid, *te_alpha),
+                                 te_alpha->df,
+                                 te_alpha->total_tf,
+                                 /*has_positions=*/true,
+                                 /*has_token_weights=*/true);
     ASSERT_EQ(it2.Next(), 0);
     EXPECT_EQ(it2.Position(), 0u);
     EXPECT_NEAR(it2.TokenWeight(), 0.5f, 0.05f);

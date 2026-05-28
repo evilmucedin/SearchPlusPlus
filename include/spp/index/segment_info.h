@@ -26,8 +26,8 @@ struct FieldStats {
     // whether the per-(term, doc) posting payload in `.doc` carries extra bytes.
     float boost = 1.0f;
     float position_decay = 0.0f;
-    bool has_positions = false;       // adds 2 bytes/entry to .doc
-    bool has_token_weights = false;   // adds 1 byte/entry to .doc
+    bool has_positions = false;      // adds 2 bytes/entry to .doc
+    bool has_token_weights = false;  // adds 1 byte/entry to .doc
 };
 
 struct SegmentInfo {

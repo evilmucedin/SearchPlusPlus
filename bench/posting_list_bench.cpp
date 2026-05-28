@@ -32,7 +32,7 @@ std::vector<std::pair<spp::DocId, std::uint32_t>> Sample(std::size_t n,
     std::vector<std::uint32_t> ids;
     ids.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
-        ids.push_back(rng() % universe);
+        ids.push_back(static_cast<std::uint32_t>(rng() % universe));
     }
     std::sort(ids.begin(), ids.end());
     ids.erase(std::unique(ids.begin(), ids.end()), ids.end());

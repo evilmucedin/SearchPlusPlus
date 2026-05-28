@@ -125,9 +125,9 @@ class SearchServer::Impl {
             "GET", "/:index/_search", [this](const http::HttpRequest& r) { return Search(r); });
         router_->Add(
             "GET", "/:index/_ltr", [this](const http::HttpRequest& r) { return GetLtr(r); });
-        router_->Add(
-            "PUT", "/:index/_ltr/linear",
-            [this](const http::HttpRequest& r) { return PutLtrLinear(r); });
+        router_->Add("PUT", "/:index/_ltr/linear", [this](const http::HttpRequest& r) {
+            return PutLtrLinear(r);
+        });
     }
 
     http::HttpResponse Health(const http::HttpRequest&) {
@@ -224,8 +224,7 @@ class SearchServer::Impl {
             // Silently ignored at index time if the schema field hasn't
             // opted into store_token_weights — the analyzer still tokenizes
             // the corresponding text field as usual.
-            if (k.size() > 8 && k.compare(k.size() - 8, 8, "_weights") == 0
-                && v.is_array()) {
+            if (k.size() > 8 && k.compare(k.size() - 8, 8, "_weights") == 0 && v.is_array()) {
                 const auto field = k.substr(0, k.size() - 8);
                 std::vector<float> weights;
                 weights.reserve(v.as_array().size());
@@ -403,9 +402,9 @@ class SearchServer::Impl {
             if (ranker_kind == "linear") {
                 linear_keepalive = GetLinearRanker(name);
                 if (linear_keepalive == nullptr) {
-                    return ErrorJson(
-                        400, "bad_request",
-                        "no linear ranker configured — PUT /:index/_ltr/linear first");
+                    return ErrorJson(400,
+                                     "bad_request",
+                                     "no linear ranker configured — PUT /:index/_ltr/linear first");
                 }
                 sopts.ranker = linear_keepalive.get();
             } else if (ranker_kind == "catboost") {
@@ -440,24 +439,22 @@ class SearchServer::Impl {
         return JsonResponse(200, spp::json::JsonValue(std::move(root)));
     }
 
-    // Per-index linear ranker storage. Read-mostly: search threads load via
-    // `std::atomic_load(&entry)` so updates are lock-free for readers.
-    // The map itself is guarded by `rankers_mu_`; the shared_ptrs it holds are
-    // swapped atomically with `std::atomic_store`. We pull the pointer once at
-    // search time so the same Ranker is used for the whole query.
+    // Per-index linear ranker storage. The map is guarded by `rankers_mu_`;
+    // a search thread copies the shared_ptr out of the map under the lock, then
+    // uses it (refcount-managed) after the lock releases — so a concurrent
+    // SetLinearRanker that swaps the slot can't invalidate the in-flight query.
     std::shared_ptr<const spp::query::LinearRanker> GetLinearRanker(const std::string& index) {
         std::lock_guard<std::mutex> lk(rankers_mu_);
         auto it = linear_rankers_.find(index);
         if (it == linear_rankers_.end())
             return nullptr;
-        return std::atomic_load(&it->second);
+        return it->second;
     }
 
     void SetLinearRanker(const std::string& index,
                          std::shared_ptr<const spp::query::LinearRanker> r) {
         std::lock_guard<std::mutex> lk(rankers_mu_);
-        auto& slot = linear_rankers_[index];
-        std::atomic_store(&slot, std::move(r));
+        linear_rankers_[index] = std::move(r);
     }
 
     SearchServerOptions opts_;

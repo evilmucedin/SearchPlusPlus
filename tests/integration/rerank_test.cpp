@@ -71,19 +71,20 @@ TEST(RerankTest, LinearRankerReordersByDocQuality) {
              "/wiki",
              R"({"mappings":{"title":{"type":"text","stored":true}},
                   "store_doc_quality":true})",
-             status, body);
+             status,
+             body);
     ASSERT_EQ(status, 200) << body;
 
     // Two docs, both matching "hello". Doc B has *more* term matches (higher
     // BM25), but doc A has a much higher static quality. With a ranker that
     // weights only doc_quality, A should beat B even though BM25 prefers B.
-    exchange("POST", "/wiki/_doc",
-             R"({"_id":"a","title":"hello","_quality":0.95})",
-             status, body);
+    exchange("POST", "/wiki/_doc", R"({"_id":"a","title":"hello","_quality":0.95})", status, body);
     ASSERT_EQ(status, 201);
-    exchange("POST", "/wiki/_doc",
+    exchange("POST",
+             "/wiki/_doc",
              R"({"_id":"b","title":"hello hello hello hello","_quality":0.01})",
-             status, body);
+             status,
+             body);
     ASSERT_EQ(status, 201);
     exchange("POST", "/wiki/_refresh", "", status, body);
     ASSERT_EQ(status, 200);
@@ -102,8 +103,8 @@ TEST(RerankTest, LinearRankerReordersByDocQuality) {
 
     // Configure a LinearRanker that gives 100x weight to doc_quality (slot 15)
     // and nothing else. PUT and re-query with rerank=true.
-    const auto put_body = LinearWeightsJson(
-        static_cast<std::size_t>(spp::query::Feature::kDocQuality), 100.0f);
+    const auto put_body =
+        LinearWeightsJson(static_cast<std::size_t>(spp::query::Feature::kDocQuality), 100.0f);
     exchange("PUT", "/wiki/_ltr/linear", put_body, status, body);
     ASSERT_EQ(status, 200) << body;
 
@@ -117,9 +118,7 @@ TEST(RerankTest, LinearRankerReordersByDocQuality) {
     }
 
     // With rerank enabled, doc A should now beat doc B.
-    exchange("GET",
-             "/wiki/_search?q=title:hello&rerank=true&ranker=linear",
-             "", status, body);
+    exchange("GET", "/wiki/_search?q=title:hello&rerank=true&ranker=linear", "", status, body);
     ASSERT_EQ(status, 200);
     {
         auto j = spp::json::Parse(body);
@@ -131,9 +130,7 @@ TEST(RerankTest, LinearRankerReordersByDocQuality) {
     }
 
     // Unknown ranker name should 400.
-    exchange("GET",
-             "/wiki/_search?q=title:hello&rerank=true&ranker=nope",
-             "", status, body);
+    exchange("GET", "/wiki/_search?q=title:hello&rerank=true&ranker=nope", "", status, body);
     EXPECT_EQ(status, 400);
 
     server.Stop();

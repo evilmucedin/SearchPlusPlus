@@ -3,12 +3,12 @@
 #include "spp/json/json_value.h"
 #include "spp/query/features.h"
 
-#include "models/catboost_model.h"
-
 #include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "models/catboost_model.h"
 
 namespace spp::query {
 
@@ -50,8 +50,7 @@ spp::json::JsonValue LinearRanker::ToJson() const {
     spp::json::JsonArray names;
     names.reserve(kFeatureCount);
     for (std::size_t i = 0; i < kFeatureCount; ++i) {
-        names.push_back(
-            spp::json::JsonValue{std::string{FeatureName(static_cast<Feature>(i))}});
+        names.push_back(spp::json::JsonValue{std::string{FeatureName(static_cast<Feature>(i))}});
     }
     o["feature_names"] = spp::json::JsonValue{std::move(names)};
     return spp::json::JsonValue{std::move(o)};
@@ -70,8 +69,7 @@ Expected<std::unique_ptr<LinearRanker>> LinearRanker::FromJson(const spp::json::
     }
     const auto& arr = w->as_array();
     if (arr.size() != kFeatureCount) {
-        return Status::InvalidArgument(
-            "linear ranker: 'weights' length must equal feature count");
+        return Status::InvalidArgument("linear ranker: 'weights' length must equal feature count");
     }
     for (std::size_t i = 0; i < kFeatureCount; ++i) {
         if (!arr[i].is_number())
