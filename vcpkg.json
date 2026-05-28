@@ -1,0 +1,17 @@
+{
+  "name": "searchplusplus",
+  "version-string": "0.1.0",
+  "description": "ElasticSearch-inspired full-text search engine library and server in C++.",
+  "homepage": "https://github.com/evilmucedin/SearchPlusPlus",
+  "license": "Apache-2.0",
+  "dependencies": [
+    {
+      "name": "gtest",
+      "host": false
+    },
+    {
+      "name": "benchmark",
+      "host": false
+    }
+  ]
+}
