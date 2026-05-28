@@ -1,0 +1,6 @@
+{
+  "mappings": {
+    "title": {"type": "text", "stored": true},
+    "body":  {"type": "text", "stored": true, "position_decay": 0.5}
+  }
+}

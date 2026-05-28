@@ -16,8 +16,8 @@ namespace spp::query {
 // Fixed-size LTR feature vector. Slot indices are stable: the CatBoost model
 // trained against schema version V must be re-trained when this constant
 // changes. Bumping kFeatureSchemaVersion forces a model retrain.
-inline constexpr std::size_t kFeatureCount = 16;
-inline constexpr std::uint32_t kFeatureSchemaVersion = 1;
+inline constexpr std::size_t kFeatureCount = 19;
+inline constexpr std::uint32_t kFeatureSchemaVersion = 2;
 
 using FeatureVector = std::array<float, kFeatureCount>;
 
@@ -43,6 +43,12 @@ enum class Feature : std::size_t {
     kTokenWeightSum = 13,
     kTokenWeightMax = 14,
     kDocQuality = 15,
+    // v2 additions. min/max of leaf IDF expose extremes that the sum (slot 2)
+    // smears together; the first-position min gives a tree a raw threshold to
+    // split on (slot 12 is locked to an exponential decay shape).
+    kMinIdfMatched = 16,
+    kMaxIdfMatched = 17,
+    kFirstPosMinNorm = 18,
 };
 
 const char* FeatureName(Feature f) noexcept;

@@ -1,0 +1,30 @@
+{"_id": "se01", "title": "Inverted index", "body": "An inverted index maps each term to the docs containing it. It is the central data structure of every full text search engine."}
+{"_id": "se02", "title": "BM25 ranking", "body": "BM25 scores documents using term frequency and document length. It is the default ranker in most full text search engines."}
+{"_id": "se03", "title": "Tokenization", "body": "A tokenizer splits text into tokens. Lowercasing and punctuation stripping happen before the inverted index is built."}
+{"_id": "se04", "title": "Posting lists", "body": "Posting lists store document ids and term frequencies. They are encoded with variable byte or simd compression for fast scans."}
+{"_id": "se05", "title": "Query parser", "body": "A query parser turns a user string into an abstract syntax tree of terms, conjunctions and disjunctions for the search engine to execute."}
+{"_id": "se06", "title": "Learning to rank", "body": "Learning to rank reorders BM25 candidates using a machine learned model trained on relevance judgments. CatBoost is a popular choice."}
+{"_id": "se07", "title": "Boolean queries", "body": "Boolean queries combine terms with AND and OR. The query parser maps these to conjunction and disjunction operators over the inverted index."}
+{"_id": "se08", "title": "TF IDF intuition", "body": "Term frequency captures how often a token appears in a document. Inverse document frequency captures how rare the token is across the corpus."}
+{"_id": "se09", "title": "Phrase queries", "body": "Phrase queries match documents where terms appear adjacent. They require positional postings, which the inverted index optionally stores."}
+{"_id": "se10", "title": "Index segments", "body": "Search engines write data in immutable segments. Background compaction merges small segments into bigger ones to keep query latency low."}
+{"_id": "ck01", "title": "Sourdough bread", "body": "A simple sourdough recipe needs flour, water, salt and a wild yeast starter. Bake it in a dutch oven for a crispy crust."}
+{"_id": "ck02", "title": "Pasta carbonara", "body": "Carbonara uses guanciale, egg yolks, pecorino and black pepper. No cream. Toss the hot pasta off the heat to keep the eggs silky."}
+{"_id": "ck03", "title": "Knife skills", "body": "Sharp knives are safer than dull ones. Learn the rock chop, the julienne and the brunoise to speed up every recipe in your kitchen."}
+{"_id": "ck04", "title": "Sear a steak", "body": "Dry the steak, salt heavily, and sear in a hot cast iron pan with neutral oil. Rest the meat before slicing across the grain."}
+{"_id": "ck05", "title": "Vegetable stock", "body": "Vegetable stock simmers onion, carrot, celery and herbs in water. Strain after an hour and freeze in jars for soups and risottos."}
+{"_id": "ck06", "title": "Caramel sauce", "body": "Cook sugar with a splash of water until amber, off the heat add cream and butter. The caramel sauce keeps in the fridge for two weeks."}
+{"_id": "ck07", "title": "Fresh pesto", "body": "Pesto blends basil leaves, garlic, pine nuts, parmesan and olive oil. Toss with hot pasta or spoon onto grilled bread for a quick lunch."}
+{"_id": "ck08", "title": "Roast chicken", "body": "Pat the chicken dry, salt under the skin, and roast at high heat. Rest before carving so the juices redistribute through the meat."}
+{"_id": "ck09", "title": "Risotto", "body": "Risotto is rice cooked slowly with hot stock, finished with butter and parmesan. Constant stirring releases starch and creates a creamy sauce."}
+{"_id": "ck10", "title": "Chocolate chip cookies", "body": "Cream butter and sugar, beat in eggs, fold in flour and chocolate. Chill the dough for a deeper flavor, then bake until the edges crisp."}
+{"_id": "sp01", "title": "Marathon training", "body": "A marathon plan ramps weekly mileage gradually, peaks three weeks before race day and tapers to keep the legs fresh for twenty six miles."}
+{"_id": "sp02", "title": "Soccer offside", "body": "A player is offside when, at the moment a teammate plays the ball, they are nearer the goal line than the second to last opponent."}
+{"_id": "sp03", "title": "Basketball pick and roll", "body": "The pick and roll is a two player action where one sets a screen and rolls to the basket while the other drives off the screen."}
+{"_id": "sp04", "title": "Tennis serve", "body": "A good tennis serve starts with a relaxed toss, a full kinetic chain through the legs and core, and a snap of the wrist at contact."}
+{"_id": "sp05", "title": "Olympic weightlifting", "body": "The snatch and the clean and jerk are the two Olympic lifts. Both move a barbell from the floor to overhead in one or two phases."}
+{"_id": "sp06", "title": "Cycling cadence", "body": "Cadence is pedal revolutions per minute. Most cyclists train at eighty to ninety rpm on flats and lower cadence on steep climbs."}
+{"_id": "sp07", "title": "Swimming freestyle", "body": "A balanced freestyle stroke rotates the hips, breathes to alternating sides, and finishes each pull with the hand exiting at the thigh."}
+{"_id": "sp08", "title": "Rock climbing grades", "body": "Sport climbing routes are graded by difficulty. The yosemite decimal system runs from five point zero up to five point fifteen and beyond."}
+{"_id": "sp09", "title": "Boxing footwork", "body": "Boxing footwork keeps the feet shoulder width apart, weight forward, and small steps that maintain balance through punches and counters."}
+{"_id": "sp10", "title": "Yoga sun salutation", "body": "The sun salutation flows from mountain pose through forward folds, planks and downward dogs. It warms the body before a longer yoga session."}
