@@ -1,0 +1,4 @@
+add_executable(hello_search main.cpp)
+target_link_libraries(hello_search PRIVATE spp_core)
+spp_apply_warnings(hello_search)
+spp_apply_sanitizers(hello_search)
