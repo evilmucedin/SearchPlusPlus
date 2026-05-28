@@ -7,6 +7,7 @@
 #include "spp/json/json_value.h"
 #include "spp/query/features.h"
 #include "spp/query/iterators.h"
+#include "spp/query/query_parser.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -343,6 +344,13 @@ Expected<SearchResult> Searcher::Search(const QueryAst& q, const SearchOptions& 
         }
     }
     return result;
+}
+
+Expected<SearchResult> Searcher::Search(std::string_view query_str, const SearchOptions& opts) {
+    auto ast = Parse(query_str, opts.default_field);
+    if (!ast.ok())
+        return ast.status();
+    return Search(*ast, opts);
 }
 
 }  // namespace spp::query

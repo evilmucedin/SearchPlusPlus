@@ -5,6 +5,7 @@
 #include "spp/json/json_value.h"
 
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -46,6 +47,12 @@ class Schema {
 
     // Add a field. The order of adds defines the field id.
     Status AddField(FieldMapping mapping);
+
+    // Convenience: add several text fields with the default analyzer and no
+    // special LTR options. Returns the first non-Ok status (e.g. duplicate
+    // name) and stops. Equivalent to calling AddField in a loop with the
+    // standard text mapping.
+    Status AddTextFields(std::initializer_list<std::string_view> names);
 
     const std::vector<FieldMapping>& fields() const noexcept {
         return fields_;

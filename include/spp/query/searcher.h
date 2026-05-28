@@ -59,6 +59,13 @@ class Searcher {
 
     Expected<SearchResult> Search(const QueryAst& q, const SearchOptions& opts);
 
+    // Convenience overload: parses `query_str` with `opts.default_field` as the
+    // implicit field, then runs the resulting AST. Short-circuits with the
+    // parser's Status if the query doesn't parse. Equivalent to:
+    //     auto ast = Parse(query_str, opts.default_field);
+    //     return ast.ok() ? Search(*ast, opts) : ast.status();
+    Expected<SearchResult> Search(std::string_view query_str, const SearchOptions& opts);
+
     const spp::index::IndexReader& reader() const noexcept {
         return *reader_;
     }
