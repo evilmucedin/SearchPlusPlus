@@ -78,3 +78,18 @@ script will refuse to run otherwise and tells you what to do.
 - They do not run benchmarks. Build with `--preset release` and invoke the
   binaries under `build/release/bench/` directly (see CI's
   `benchmarks-smoke` job for the expected invocation).
+
+## Workload scripts (not part of the install/build flow)
+
+- `train_ltr.py` / `demo_train_ltr.sh` — LTR pipeline. See
+  `docs/ltr_training.md`.
+- `bench_search.py` / `demo_bench_search.sh` — search-throughput load test
+  against a running `spp_serve`. Reports max searches/minute (both the
+  per-window peak and the sustained mean) plus latency percentiles. Run
+  `./scripts/demo_bench_search.sh` for the smoke test, or point
+  `bench_search.py` at your own running instance:
+
+  ```bash
+  scripts/bench_search.py --url http://127.0.0.1:9200 \
+      --index wiki --duration 60 --concurrency 32
+  ```
