@@ -13,5 +13,16 @@
       "name": "benchmark",
       "host": false
     }
-  ]
+  ],
+  "features": {
+    "python": {
+      "description": "Build the optional Python (pybind11) bindings.",
+      "dependencies": [
+        {
+          "name": "pybind11",
+          "host": false
+        }
+      ]
+    }
+  }
 }

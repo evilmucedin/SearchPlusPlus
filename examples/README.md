@@ -1,11 +1,12 @@
 # SearchPlusPlus examples
 
-Small self-contained programs that show how to use the SearchPlusPlus C++
+Small self-contained programs that show how to use the SearchPlusPlus
 library directly, without going through the HTTP server.
 
 | Example | What it shows |
 |---|---|
 | [`hello_search`](hello_search/main.cpp) | The smallest end-to-end flow: declare a schema, open an index in a temp dir, add a few documents, refresh, parse a query, run it through `Searcher`, print the top hits with scores. |
+| [`python/hello_search.py`](python/hello_search.py) | Line-for-line Python mirror of `hello_search`, using the optional pybind11 bindings. See [`python/README.md`](python/README.md) and [`../python/README.md`](../python/README.md) for build instructions. |
 
 Build (examples are on by default):
 
