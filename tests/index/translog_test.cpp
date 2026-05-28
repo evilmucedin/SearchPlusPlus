@@ -18,25 +18,31 @@ std::filesystem::path TmpDir() {
 
 }  // namespace
 
+// Scope the Translog so its append handle is released before remove_all;
+// Windows refuses to delete a file that still has an open handle.
 TEST(TranslogTest, AppendAndReplay) {
     auto root = TmpDir();
-    auto log = spp::index::Translog::Open(root).value();
-    ASSERT_TRUE(log->Append("doc-1").ok());
-    ASSERT_TRUE(log->Append("doc-two-longer").ok());
-    auto recs = log->Replay().value();
-    ASSERT_EQ(recs.size(), 2u);
-    EXPECT_EQ(recs[0], "doc-1");
-    EXPECT_EQ(recs[1], "doc-two-longer");
+    {
+        auto log = spp::index::Translog::Open(root).value();
+        ASSERT_TRUE(log->Append("doc-1").ok());
+        ASSERT_TRUE(log->Append("doc-two-longer").ok());
+        auto recs = log->Replay().value();
+        ASSERT_EQ(recs.size(), 2u);
+        EXPECT_EQ(recs[0], "doc-1");
+        EXPECT_EQ(recs[1], "doc-two-longer");
+    }
     std::filesystem::remove_all(root);
 }
 
 TEST(TranslogTest, TruncateClearsLog) {
     auto root = TmpDir();
-    auto log = spp::index::Translog::Open(root).value();
-    ASSERT_TRUE(log->Append("x").ok());
-    ASSERT_TRUE(log->Truncate().ok());
-    auto recs = log->Replay().value();
-    EXPECT_TRUE(recs.empty());
+    {
+        auto log = spp::index::Translog::Open(root).value();
+        ASSERT_TRUE(log->Append("x").ok());
+        ASSERT_TRUE(log->Truncate().ok());
+        auto recs = log->Replay().value();
+        EXPECT_TRUE(recs.empty());
+    }
     std::filesystem::remove_all(root);
 }
 
@@ -54,9 +60,11 @@ TEST(TranslogTest, TornLastRecordTolerated) {
         const char garbage[] = {static_cast<char>(0xff), static_cast<char>(0xff), 0x00};
         f.write(garbage, sizeof(garbage));
     }
-    auto log2 = spp::index::Translog::Open(root).value();
-    auto recs = log2->Replay().value();
-    ASSERT_EQ(recs.size(), 1u);
-    EXPECT_EQ(recs[0], "good");
+    {
+        auto log2 = spp::index::Translog::Open(root).value();
+        auto recs = log2->Replay().value();
+        ASSERT_EQ(recs.size(), 1u);
+        EXPECT_EQ(recs[0], "good");
+    }
     std::filesystem::remove_all(root);
 }
