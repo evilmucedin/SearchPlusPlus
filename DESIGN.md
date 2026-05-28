@@ -56,6 +56,7 @@ The dependency budget is small on purpose — see principle 2. Each dependency b
 - **GoogleTest** for unit and integration tests.
 - **Google Benchmark** for microbenchmarks.
 - **libFuzzer** (via the compiler's sanitizer suite) for nightly fuzzing.
+- **pybind11** for the optional Python bindings (`python/`). Header-only, ~200 KB, single-purpose, widely used in the scientific-Python ecosystem. Writing a CPython extension by hand against the raw C API is technically possible but is a project of its own and forces every method to be hand-marshalled — clears the bar from principle 2. Gated behind `SPP_BUILD_PYTHON=OFF` (default) so the C++ build stays self-contained when bindings aren't wanted.
 
 **Header-only utilities** are preferred over heavy framework dependencies whenever the choice is available. Where C++20 / C++23 cover what we need (`std::span`, `<format>` once the floor moves, `<bit>`, `std::expected` via a tiny vendored shim until C++23 is universal), we use the standard library.
 
