@@ -38,6 +38,17 @@ Status Schema::AddField(FieldMapping mapping) {
     return Status::Ok();
 }
 
+Status Schema::AddTextFields(std::initializer_list<std::string_view> names) {
+    for (auto name : names) {
+        FieldMapping m;
+        m.name = std::string{name};
+        m.type = FieldType::kText;
+        if (auto st = AddField(std::move(m)); !st.ok())
+            return st;
+    }
+    return Status::Ok();
+}
+
 bool Schema::HasField(std::string_view name) const noexcept {
     return by_name_.find(std::string{name}) != by_name_.end();
 }
