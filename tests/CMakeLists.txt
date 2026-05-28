@@ -61,4 +61,5 @@ spp_add_test_target(integration_test
   integration/crash_recovery_test.cpp
   integration/rerank_test.cpp
   integration/ltr_storage_test.cpp
+  integration/search_concurrency_test.cpp
 )
