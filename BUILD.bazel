@@ -1,0 +1,40 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# spp_core — the engine. Same .cpp set as the CMake build (see
+# src/CMakeLists.txt). We define the library here at the workspace root
+# because it spans two source trees (src/ and include/) and Bazel makes
+# cross-package hdrs awkward.
+#
+# strip_include_prefix = "include" makes the public headers reachable as
+# `#include "spp/base/types.h"`, matching CMake's
+# target_include_directories(spp_core PUBLIC include).
+cc_library(
+    name = "spp_core",
+    srcs = glob(
+        ["src/**/*.cpp"],
+        # The model is wired in via //models:catboost_model so that swapping
+        # in a trained export is a one-file change in the deps list.
+        allow_empty = False,
+    ),
+    hdrs = glob(["include/spp/**/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        "//models:catboost_model",
+    ],
+    linkopts = select({
+        "@platforms//os:windows": [
+            "-DEFAULTLIB:ws2_32.lib",
+        ],
+        "//conditions:default": [
+            "-lpthread",
+        ],
+    }),
+)
+
+exports_files([
+    "MODULE.bazel",
+    ".bazelrc",
+    ".bazelversion",
+])

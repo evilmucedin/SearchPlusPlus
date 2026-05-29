@@ -67,3 +67,8 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Bazel — the convenience symlinks ($workspace/bazel-*) and any user-level
+# rc overrides. The cache itself lives under ~/.cache/bazel.
+bazel-*
+user.bazelrc

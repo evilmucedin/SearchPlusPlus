@@ -1,0 +1,21 @@
+# C++20 across all configurations.
+build --cxxopt=-std=c++20
+build --host_cxxopt=-std=c++20
+
+# MSVC needs the slash form.
+build:windows --cxxopt=/std:c++20
+build:windows --host_cxxopt=/std:c++20
+
+# Bzlmod is the dependency model (no legacy WORKSPACE).
+common --enable_bzlmod
+
+# Surface compiler errors with full context — Bazel's default truncation
+# eats the bit you actually want when a templated header explodes.
+build --verbose_failures
+
+# CI-style invocations want the test log when something fails.
+test --test_output=errors
+
+# Hermetic-ish: don't accidentally pick up //external symbolic links from a
+# previous CMake build that lives under build/.
+build --incompatible_strict_action_env

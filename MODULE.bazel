@@ -1,0 +1,22 @@
+"""SearchPlusPlus Bazel module.
+
+The CMake build is the primary build system (matches what ships in CI lanes
+and what the install/build scripts drive). This Bazel module is the alternate
+build path — useful for monorepo integration and for users who already drive
+their C++ stacks through Bazel. It builds the same set of binaries (spp_core,
+the four CLI tools, the test suite) from the same .cpp sources, so a change
+to a .cpp file is automatically picked up by both builds.
+
+Versions are deliberately a notch behind the bleeding edge: BCR has a longer
+tail of compatible versions than Bazel itself, and we'd rather not chase a
+Bazel-9-only constellation if a long-tail consumer is on Bazel 7.
+"""
+
+module(
+    name = "spp",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.0.17")
+bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "googletest", version = "1.15.2", dev_dependency = True)

@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# The CatBoost C++ export the engine links in. The default ships a stub that
+# returns features[0] (== BM25 total) so spp_serve degrades to BM25 when no
+# real model is installed; replace `catboost_model.cpp` with the output of
+# `model.save_model(format='cpp')` and rebuild to deploy a trained model.
+#
+# `src/query/ranker.cpp` includes this as `"models/catboost_model.h"`, so the
+# headers live at workspace-root-relative paths and the library exposes them
+# unmodified (no strip_include_prefix).
+cc_library(
+    name = "catboost_model",
+    srcs = ["catboost_model.cpp"],
+    hdrs = ["catboost_model.h"],
+    visibility = ["//:__pkg__"],
+)
