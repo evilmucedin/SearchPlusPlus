@@ -81,8 +81,16 @@ cmake --build --preset default -j
 ctest --preset default --output-on-failure
 ```
 
-CI matrix runs on Ubuntu (gcc, clang, asan+ubsan), macOS (Apple LLVM), and
-Windows (MSVC). All green.
+A Bazel build is also available for monorepo consumers — same sources, same
+binaries, same test suite:
+
+```bash
+bazel build //...
+bazel test //tests/...
+```
+
+CI matrix runs on Ubuntu (gcc, clang, asan+ubsan, bazel), macOS (Apple LLVM),
+and Windows (MSVC). All green.
 
 ## What's in here
 

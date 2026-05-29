@@ -1,0 +1,8 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "spp_serve",
+    srcs = ["main.cpp"],
+    deps = ["//:spp_core"],
+    visibility = ["//visibility:public"],
+)

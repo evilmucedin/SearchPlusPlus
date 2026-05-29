@@ -1,0 +1,124 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+# Header-only helper used by the http and integration tests. Exposed as a
+# cc_library so the include path resolves the same way the CMake build sees it
+# (`#include "tests/http/test_client.h"`), since the file lives outside the
+# spp/ public-API tree.
+cc_library(
+    name = "test_client",
+    hdrs = ["http/test_client.h"],
+    strip_include_prefix = "/",
+    visibility = ["//visibility:private"],
+)
+
+# Mirrors tests/CMakeLists.txt's spp_add_test_target() invocations one-to-one.
+# Each binary aggregates a topic's worth of test files; the suite is small
+# enough that further splitting buys no parallelism (gtest already shards
+# within a binary).
+
+cc_test(
+    name = "base_test",
+    srcs = [
+        "base/expected_test.cpp",
+        "base/status_test.cpp",
+    ],
+    deps = [
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "json_test",
+    srcs = [
+        "json/json_parser_test.cpp",
+        "json/json_serializer_test.cpp",
+    ],
+    deps = [
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "analyze_test",
+    srcs = ["analyze/standard_analyzer_test.cpp"],
+    deps = [
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "store_test",
+    srcs = [
+        "store/file_io_test.cpp",
+        "store/filesystem_directory_test.cpp",
+        "store/varbyte_test.cpp",
+    ],
+    deps = [
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "index_test",
+    srcs = [
+        "index/index_writer_test.cpp",
+        "index/mutable_segment_test.cpp",
+        "index/schema_test.cpp",
+        "index/segment_roundtrip_test.cpp",
+        "index/translog_test.cpp",
+    ],
+    deps = [
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "query_test",
+    srcs = [
+        "query/bm25_test.cpp",
+        "query/features_test.cpp",
+        "query/iterators_test.cpp",
+        "query/query_parser_test.cpp",
+        "query/ranker_test.cpp",
+        "query/searcher_test.cpp",
+    ],
+    deps = [
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "http_test",
+    srcs = [
+        "http/http_parser_test.cpp",
+        "http/http_server_test.cpp",
+    ],
+    deps = [
+        ":test_client",
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "integration_test",
+    srcs = [
+        "integration/crash_recovery_test.cpp",
+        "integration/e2e_http_test.cpp",
+        "integration/ltr_storage_test.cpp",
+        "integration/nrt_test.cpp",
+        "integration/rerank_test.cpp",
+        "integration/search_concurrency_test.cpp",
+    ],
+    deps = [
+        ":test_client",
+        "//:spp_core",
+        "@googletest//:gtest_main",
+    ],
+)
